@@ -1,7 +1,25 @@
-* { box-sizing: border-box; user-select: none; font-family: 'Segoe UI', Tahoma, sans-serif; }
-body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0b0c10; color: #fff; }
+* { 
+  box-sizing: border-box; 
+  user-select: none; 
+  font-family: 'Segoe UI', Tahoma, sans-serif; 
+}
 
-#game-canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+body, html { 
+  margin: 0; 
+  padding: 0; 
+  width: 100%; 
+  height: 100%; 
+  overflow: hidden; 
+  background: #0b0c10; 
+  color: #fff; 
+}
+
+#game-canvas { 
+  display: block; 
+  width: 100vw; 
+  height: 100vh; 
+  cursor: crosshair; 
+}
 
 .panel {
   position: absolute;
@@ -13,8 +31,23 @@ body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
   border-radius: 12px;
 }
 
-.top-panel { top: 15px; left: 15px; right: 15px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-.center-panel { top: 50%; left: 50%; transform: translate(-50%, -50%); width: 320px; text-align: center; }
+.top-panel { 
+  top: 15px; 
+  left: 15px; 
+  right: 15px; 
+  display: flex; 
+  gap: 10px; 
+  justify-content: center; 
+  flex-wrap: wrap; 
+}
+
+.center-panel { 
+  top: 50%; 
+  left: 50%; 
+  transform: translate(-50%, -50%); 
+  width: 320px; 
+  text-align: center; 
+}
 
 .palette {
   position: absolute;
@@ -42,19 +75,71 @@ body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
   white-space: nowrap;
   border: 1px solid transparent;
 }
-.p-item.selected { border-color: #00e676; background: #1b5e20; }
 
-.box { background: rgba(255, 255, 255, 0.05); padding: 10px; border-radius: 8px; margin-bottom: 10px; }
-.m-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.p-item.selected { 
+  border-color: #00e676; 
+  background: #1b5e20; 
+}
 
-input[type="text"], select { background: #141625; color: #fff; border: 1px solid #333; padding: 8px; border-radius: 6px; width: 100%; }
-.file-btn { background: #3f4771; font-size: 0.75rem; padding: 8px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
-.file-btn input { display: none; }
+.p-item.delete-btn { 
+  background: #b71c1c; 
+  border-color: #ff5252; 
+}
 
-.btn { cursor: pointer; border: none; border-radius: 6px; padding: 8px 12px; font-weight: bold; color: #fff; }
+.p-item.delete-btn.selected { 
+  background: #ff1744; 
+  color: #fff; 
+}
+
+.box { 
+  background: rgba(255, 255, 255, 0.05); 
+  padding: 10px; 
+  border-radius: 8px; 
+  margin-bottom: 10px; 
+}
+
+.m-row { 
+  display: flex; 
+  gap: 6px; 
+  margin-bottom: 6px; 
+}
+
+input[type="text"], select { 
+  background: #141625; 
+  color: #fff; 
+  border: 1px solid #333; 
+  padding: 8px; 
+  border-radius: 6px; 
+  width: 100%; 
+}
+
+.file-btn { 
+  background: #3f4771; 
+  font-size: 0.75rem; 
+  padding: 8px; 
+  border-radius: 6px; 
+  cursor: pointer; 
+  white-space: nowrap; 
+}
+
+.file-btn input { 
+  display: none; 
+}
+
+.btn { 
+  cursor: pointer; 
+  border: none; 
+  border-radius: 6px; 
+  padding: 8px 12px; 
+  font-weight: bold; 
+  color: #fff; 
+}
+
 .green { background: #00c853; }
 .red { background: #d50000; }
 .blue { background: #00b0ff; }
+.orange { background: #ff9800; }
+.gray { background: #607d8b; }
 .start { background: #ff9100; font-size: 1.1rem; width: 100%; padding: 10px; margin-top: 5px; }
 .small { background: #444; font-size: 0.8rem; }
 .btn:hover { opacity: 0.9; }
