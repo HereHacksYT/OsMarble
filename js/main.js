@@ -1,241 +1,271 @@
-let scene, camera, renderer, world;
-let mapObjects = [], marbles = [];
-let isEditing = false, isRacing = false;
-let draggedType = null;
+const { Engine, Render, Runner, Bodies, Composite, Body, Events } = Matter;
 
-// Kayıtlı Haritalar (LocalStorage + Varsayılan)
-let savedMaps = JSON.parse(localStorage.getItem('my_marble_maps')) || {
-  "Varsayılan Rampa": [
-    { type: "flat", pos: [0, 8, 0], rot: [0,0,0] },
-    { type: "ramp", pos: [0, 4, 8], rot: [0.3,0,0] },
-    { type: "finish", pos: [0, -1, 18], rot: [0,0,0] }
+let engine, runner, canvas;
+let currentMode = 'menu'; // 'menu', 'editor', 'race', 'winner'
+let selectedTileType = 'flat';
+let editorMapPieces = [];
+let marbles = [];
+let loadedImages = {};
+
+// Kayıtlı Haritalar (LocalStorage)
+let savedMaps = JSON.parse(localStorage.getItem('m_maps_2d')) || {
+  "Varsayılan Harita": [
+    { type: 'flat', x: 200, y: 200 },
+    { type: 'ramp-down', x: 400, y: 250 },
+    { type: 'flat', x: 600, y: 350 },
+    { type: 'finish', x: 750, y: 380 }
   ]
 };
 
-let currentMapData = [];
-
 function init() {
-  // THREE.JS SAHNESİ
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0a0b10);
+  canvas = document.getElementById('game-canvas');
+  
+  // Matter.js Fizik Motoru
+  engine = Engine.create();
+  engine.gravity.y = 1.2; // Yerçekimi
 
-  camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(0, 15, 30);
+  // Canvas Boyutu
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
 
-  renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  document.body.appendChild(renderer.domElement);
+  setupEvents();
+  updateMapDropdown();
+  setMode('menu');
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-  const light = new THREE.DirectionalLight(0xffffff, 0.8);
-  light.position.set(20, 40, 20);
-  scene.add(light);
+  // Oyun / Fizik Döngüsü
+  runner = Runner.create();
+  Runner.run(runner, engine);
 
-  // CANNON.JS FİZİK
-  world = new CANNON.World();
-  world.gravity.set(0, -12, 0);
-
-  setupUIEvents();
-  updateMapSelectOptions();
-  animate();
+  // Özel Canvas Çizim Döngüsü (2D Render)
+  requestAnimationFrame(drawLoop);
 }
 
-// DRAG & DROP HARİTA TASARIMI
-function setupUIEvents() {
-  document.querySelectorAll('.palette-item').forEach(el => {
-    el.addEventListener('dragstart', (e) => draggedType = e.target.dataset.type);
-  });
-
-  window.addEventListener('dragover', (e) => e.preventDefault());
-  window.addEventListener('drop', (e) => {
-    e.preventDefault();
-    if (!isEditing || !draggedType) return;
-
-    // Farenin 3D Dünyadaki Karşılığını Hesapla
-    const vec = new THREE.Vector3(
-      (e.clientX / window.innerWidth) * 2 - 1,
-      -(e.clientY / window.innerHeight) * 2 + 1,
-      0.5
-    );
-    vec.unproject(camera);
-    const dir = vec.sub(camera.position).normalize();
-    const distance = -camera.position.y / dir.y;
-    const pos = camera.position.clone().add(dir.multiplyScalar(distance));
-
-    // Parça Ekle
-    const newPiece = { type: draggedType, pos: [Math.round(pos.x), Math.round(pos.y), Math.round(pos.z)], rot: [draggedType === 'ramp' ? 0.3 : 0, 0, 0] };
-    currentMapData.push(newPiece);
-    renderPiece(newPiece);
-  });
-
-  // MENÜ BUTONLARI
-  document.getElementById('btn-open-editor').onclick = () => setMode('editor');
-  document.getElementById('btn-go-menu').onclick = () => setMode('menu');
-  document.getElementById('btn-save-map').onclick = saveCurrentMap;
-  document.getElementById('btn-start-race').onclick = startRace;
-  document.getElementById('btn-restart').onclick = startRace;
-  document.getElementById('btn-back-menu').onclick = () => setMode('menu');
-
-  // MİSKET GİRDİSİ EKLEME
-  document.getElementById('btn-add-marble-input').onclick = () => {
-    const container = document.getElementById('marble-inputs');
-    const count = container.children.length + 1;
-    const div = document.createElement('div');
-    div.className = 'marble-row';
-    div.innerHTML = `<input type="text" class="m-name" value="Misket ${count}"><label class="file-label">🖼️ Fotoğraf Seç <input type="file" class="m-img" accept="image/*"></label>`;
-    container.appendChild(div);
-  };
-}
-
-// SAHNEYE PARÇA ÇİZME
-function renderPiece(p) {
-  let geo = new THREE.BoxGeometry(6, 0.5, 8);
-  let color = p.type === 'flat' ? 0x3498db : (p.type === 'ramp' ? 0xe67e22 : 0xe74c3c);
-  if(p.type === 'finish') geo = new THREE.BoxGeometry(8, 0.2, 3);
-
-  const mat = new THREE.MeshStandardMaterial({ color });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(...p.pos);
-  mesh.rotation.set(...p.rot);
-  scene.add(mesh);
-
-  const shape = new CANNON.Box(new CANNON.Vec3(geo.parameters.width/2, geo.parameters.height/2, geo.parameters.depth/2));
-  const body = new CANNON.Body({ mass: 0 });
-  body.addShape(shape);
-  body.position.set(...p.pos);
-  body.quaternion.setFromEuler(...p.rot);
-  world.addBody(body);
-
-  mapObjects.push({ mesh, body, type: p.type });
-}
-
-// MODLAR ARASI GEÇİŞ
+// MOD GEÇİŞLERİ
 function setMode(mode) {
-  isEditing = (mode === 'editor');
-  isRacing = (mode === 'race');
-
+  currentMode = mode;
   document.getElementById('menu-ui').style.display = mode === 'menu' ? 'block' : 'none';
-  document.getElementById('editor-ui').style.display = isEditing ? 'block' : 'none';
-  document.getElementById('palette-bar').style.display = isEditing ? 'flex' : 'none';
-  document.getElementById('winner-modal').style.display = mode === 'winner' ? 'block' : 'none';
+  document.getElementById('editor-ui').style.display = mode === 'editor' ? 'flex' : 'none';
+  document.getElementById('palette-bar').style.display = mode === 'editor' ? 'flex' : 'none';
+  document.getElementById('winner-ui').style.display = mode === 'winner' ? 'block' : 'none';
 
-  clearScene();
+  clearWorld();
 
-  if (isEditing) {
-    currentMapData = [];
-    camera.position.set(0, 20, 25);
-    camera.lookAt(0, 0, 0);
+  if (mode === 'editor') {
+    editorMapPieces = [];
   } else if (mode === 'menu') {
-    loadSelectedMap();
+    loadSelectedMapToWorld();
   }
 }
 
-function clearScene() {
-  mapObjects.forEach(o => { scene.remove(o.mesh); world.remove(o.body); });
-  marbles.forEach(m => { scene.remove(m.mesh); world.remove(m.body); });
-  mapObjects = []; marbles = [];
+function clearWorld() {
+  Composite.clear(engine.world, false);
+  marbles = [];
 }
 
-function loadSelectedMap() {
-  clearScene();
-  const selectedName = document.getElementById('map-select').value;
-  currentMapData = savedMaps[selectedName] || [];
-  currentMapData.forEach(p => renderPiece(p));
+// TIKLAYARAK PARÇA KOYMA (Editör)
+function setupEvents() {
+  // Palet Seçimi
+  document.querySelectorAll('.p-item').forEach(el => {
+    el.onclick = () => {
+      document.querySelectorAll('.p-item').forEach(i => i.classList.remove('selected'));
+      el.classList.add('selected');
+      selectedTileType = el.dataset.type;
+    };
+  });
+
+  // Ekrana Tıklayınca Parça Koy
+  canvas.addEventListener('pointerdown', (e) => {
+    if (currentMode !== 'editor') return;
+    
+    // UI üstüne basıldıysa işlem yapma
+    if (e.clientY < 80 || e.clientY > window.innerHeight - 80) return;
+
+    const x = Math.round(e.clientX / 20) * 20; // Izgaraya oturt (Grid Snap)
+    const y = Math.round(e.clientY / 20) * 20;
+
+    editorMapPieces.push({ type: selectedTileType, x, y });
+    createMapBody(selectedTileType, x, y);
+  });
+
+  // Menü Butonları
+  document.getElementById('btn-open-editor').onclick = () => setMode('editor');
+  document.getElementById('btn-to-menu').onclick = () => setMode('menu');
+  document.getElementById('btn-menu-back').onclick = () => setMode('menu');
+  document.getElementById('btn-clear').onclick = () => { clearWorld(); editorMapPieces = []; };
+  document.getElementById('btn-save').onclick = saveMap;
+  document.getElementById('btn-start').onclick = startRace;
+  document.getElementById('btn-restart').onclick = startRace;
+
+  // Misket Ekleme
+  document.getElementById('btn-add-marble').onclick = () => {
+    const list = document.getElementById('marble-list');
+    const div = document.createElement('div');
+    div.className = 'm-row';
+    div.innerHTML = `<input type="text" class="m-name" value="Misket ${list.children.length + 1}">
+                     <label class="file-btn">🖼️ Resim <input type="file" class="m-img" accept="image/*"></label>`;
+    list.appendChild(div);
+  };
 }
 
-function saveCurrentMap() {
-  const name = document.getElementById('map-name-input').value || "Isimsiz Harita";
-  savedMaps[name] = currentMapData;
-  localStorage.setItem('my_marble_maps', JSON.stringify(savedMaps));
-  updateMapSelectOptions();
-  alert("Harita Kaydedildi!");
+// HARİTA PARÇASI OLUŞTURMA
+function createMapBody(type, x, y) {
+  let body;
+  if (type === 'flat') {
+    body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, render: { fillStyle: '#3498db' } });
+  } else if (type === 'ramp-down') {
+    body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, angle: 0.35, render: { fillStyle: '#e67e22' } });
+  } else if (type === 'ramp-up') {
+    body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, angle: -0.35, render: { fillStyle: '#e67e22' } });
+  } else if (type === 'finish') {
+    body = Bodies.rectangle(x, y, 120, 15, { isStatic: true, isSensor: true, label: 'finish', render: { fillStyle: '#e74c3c' } });
+  }
+  
+  if (body) {
+    body.pieceType = type;
+    Composite.add(engine.world, body);
+  }
+}
+
+function saveMap() {
+  const name = document.getElementById('map-name').value || "Yeni Harita";
+  savedMaps[name] = editorMapPieces;
+  localStorage.setItem('m_maps_2d', JSON.stringify(savedMaps));
+  updateMapDropdown();
+  alert("Harita Başarıyla Kaydedildi!");
   setMode('menu');
 }
 
-function updateMapSelectOptions() {
+function updateMapDropdown() {
   const select = document.getElementById('map-select');
   select.innerHTML = '';
-  Object.keys(savedMaps).forEach(name => {
+  Object.keys(savedMaps).forEach(m => {
     const opt = document.createElement('option');
-    opt.value = name; opt.innerText = name;
+    opt.value = m; opt.innerText = m;
     select.appendChild(opt);
   });
 }
 
-// YARIŞI BAŞLAT VE MİSKETLERE FOTOĞRAF KAPLA
+function loadSelectedMapToWorld() {
+  clearWorld();
+  const name = document.getElementById('map-select').value;
+  const pieces = savedMaps[name] || [];
+  pieces.forEach(p => createMapBody(p.type, p.x, p.y));
+}
+
+// YARIŞI BAŞLAT VE MİSKET RESİMLERİNİ DÜZENLE
 async function startRace() {
   setMode('race');
-  loadSelectedMap();
+  loadSelectedMapToWorld();
 
-  const rows = document.querySelectorAll('.marble-row');
-  const textureLoader = new THREE.TextureLoader();
-
+  const rows = document.querySelectorAll('.m-row');
+  
   for (let i = 0; i < rows.length; i++) {
     const name = rows[i].querySelector('.m-name').value;
     const fileInput = rows[i].querySelector('.m-img');
 
-    let mat = new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff });
+    let imgObj = null;
 
-    // Fotoğraf Seçilmişse Dokuyu Kapla
     if (fileInput.files && fileInput.files[0]) {
       const url = URL.createObjectURL(fileInput.files[0]);
-      const texture = await new Promise(resolve => textureLoader.load(url, resolve));
-      mat = new THREE.MeshStandardMaterial({ map: texture });
+      imgObj = new Image();
+      imgObj.src = url;
+      await new Promise(r => imgObj.onload = r);
     }
 
-    // Visual
-    const geo = new THREE.SphereGeometry(0.8, 32, 32);
-    const mesh = new THREE.Mesh(geo, mat);
-    scene.add(mesh);
+    // 2D Yuvarlak Misket Gövdesi
+    const radius = 18;
+    const x = 100 + (i * 45);
+    const y = 50;
 
-    // Physics
-    const shape = new CANNON.Sphere(0.8);
-    const body = new CANNON.Body({ mass: 2 });
-    body.addShape(shape);
-    body.position.set((i - rows.length / 2) * 2, 12, 0); // Başlangıç Yan Yana
-    world.addBody(body);
-
-    marbles.push({ mesh, body, name });
-  }
-}
-
-// OYUN DÖNGÜSÜ
-function animate() {
-  requestAnimationFrame(animate);
-  world.step(1 / 60);
-
-  if (isRacing) {
-    let leader = null;
-    let maxZ = -999;
-
-    marbles.forEach(m => {
-      m.mesh.position.copy(m.body.position);
-      m.mesh.quaternion.copy(m.body.quaternion);
-
-      // En Öndeki Misketi Bul (Kamera Takibi İçin)
-      if (m.mesh.position.z > maxZ) {
-        maxZ = m.mesh.position.z;
-        leader = m;
-      }
-
-      // Bitiş Çizgisine Ulaştı mı?
-      mapObjects.filter(o => o.type === 'finish').forEach(f => {
-        if (m.mesh.position.distanceTo(f.mesh.position) < 2.5) {
-          isRacing = false;
-          document.getElementById('winner-title').innerText = `🏆 KAZANAN: ${m.name}!`;
-          setMode('winner');
-        }
-      });
+    const body = Bodies.circle(x, y, radius, {
+      restitution: 0.7, // Zıplama
+      friction: 0.05,
+      density: 0.002
     });
 
-    // Kamerayı Lider Miskete Odakla
-    if (leader) {
-      camera.position.lerp(new THREE.Vector3(leader.mesh.position.x, leader.mesh.position.y + 6, leader.mesh.position.z - 10), 0.1);
-      camera.lookAt(leader.mesh.position);
-    }
+    Composite.add(engine.world, body);
+    marbles.push({ body, name, radius, img: imgObj, color: `hsl(${i * 90}, 80%, 50%)` });
   }
 
-  renderer.render(scene, camera);
+  // Bitiş Kontrolü
+  Events.on(engine, 'collisionStart', (e) => {
+    if (currentMode !== 'race') return;
+    e.pairs.forEach(pair => {
+      const { bodyA, bodyB } = pair;
+      const isFinish = bodyA.label === 'finish' || bodyB.label === 'finish';
+      if (isFinish) {
+        const marbleBody = bodyA.label === 'finish' ? bodyB : bodyA;
+        const winner = marbles.find(m => m.body === marbleBody);
+        if (winner) {
+          document.getElementById('winner-text').innerText = `🏆 KAZANAN: ${winner.name}!`;
+          setMode('winner');
+        }
+      }
+    });
+  });
+}
+
+// 2D ÖZEL CANVAS ÇİZİMİ
+function drawLoop() {
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // 1. Harita Elemanlarını Çiz
+  const bodies = Composite.allBodies(engine.world);
+  bodies.forEach(b => {
+    if (b.label === 'Circle Body') return; // Misketleri ayrıca çizeceğiz
+
+    ctx.save();
+    ctx.translate(b.position.x, b.position.y);
+    ctx.rotate(b.angle);
+
+    if (b.label === 'finish') {
+      ctx.fillStyle = '#e74c3c';
+      ctx.fillRect(-60, -7.5, 120, 15);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.fillText("FINISH", -18, 4);
+    } else {
+      ctx.fillStyle = b.render.fillStyle || '#3498db';
+      ctx.fillRect(-80, -10, 160, 20);
+    }
+    ctx.restore();
+  });
+
+  // 2. Misketleri Resim veya Renk İle Çiz
+  marbles.forEach(m => {
+    const { x, y } = m.body.position;
+    const angle = m.body.angle;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+
+    // Yuvarlak Kırpma (Maske)
+    ctx.beginPath();
+    ctx.arc(0, 0, m.radius, 0, Math.PI * 2);
+    ctx.clip();
+
+    if (m.img) {
+      ctx.drawImage(m.img, -m.radius, -m.radius, m.radius * 2, m.radius * 2);
+    } else {
+      ctx.fillStyle = m.color;
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+
+    ctx.restore();
+
+    // Üstüne İsim Yaz
+    ctx.fillStyle = '#fff';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(m.name, x, y - m.radius - 6);
+  });
+
+  requestAnimationFrame(drawLoop);
 }
 
 window.onload = init;
