@@ -3,38 +3,65 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kendi Kendine Yarışan Misketler & Harita Editörü</title>
+  <title>Misket Yarışı & Harita Yapıcı</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
 </head>
 <body>
 
-  <div id="ui">
-    <h2>🔴 Misket Yarış Arenası</h2>
-    
-    <div class="section">
-      <label>Harita Seç:</label>
-      <button id="btn-map1">🏟️ Harita 1: Klasik Rampa</button>
-      <button id="btn-map2">⚔️ Harita 2: Zikzak Parkur</button>
-    </div>
-
-    <div class="section">
-      <button id="btn-spawn" class="action-btn">🎲 5 Misket Bırak!</button>
-      <button id="btn-clear-marbles" class="danger-btn">🧹 Misketleri Temizle</button>
-    </div>
-
-    <hr>
-
-    <div class="section">
-      <h3>🛠️ Harita Tasarla (Editör)</h3>
-      <button id="btn-toggle-edit" class="edit-btn">Mode: İzleyici (Editörü Aç)</button>
-      <p class="small-text" id="edit-info" style="display:none;">Zemine sol tıklayarak yeni blok koyabilirsin!</p>
-      <button id="btn-export" style="display:none;">💾 Haritayı İndir (JSON)</button>
+  <!-- MOD 1: HARİTA EDİTÖRÜ UI -->
+  <div id="editor-ui" class="overlay-panel">
+    <h2>🛠️ Harita Tasarla</h2>
+    <div class="editor-controls">
+      <input type="text" id="map-name-input" placeholder="Harita Adı Gir..." value="Çılgın Parkur">
+      <button id="btn-save-map" class="green-btn">💾 Haritayı Kaydet</button>
+      <button id="btn-go-menu" class="red-btn">🚪 Menüye Dön</button>
     </div>
   </div>
 
-  <script src="js/maps.js"></script>
+  <!-- SÜRÜKLE BRK PARÇALAR PANELİ (Alt Kısım) -->
+  <div id="palette-bar">
+    <div class="palette-item" data-type="flat">🧱 Düz Yol</div>
+    <div class="palette-item" data-type="ramp">📐 Rampa</div>
+    <div class="palette-item" data-type="finish">🏁 Bitiş Çizgisi</div>
+  </div>
+
+  <!-- MOD 2: ANA MENÜ UI -->
+  <div id="menu-ui" class="overlay-panel center-panel">
+    <h1>🔴 MİSKET YARIŞI 🏆</h1>
+    
+    <div class="card">
+      <h3>1. Harita Seç</h3>
+      <select id="map-select"></select>
+      <button id="btn-open-editor" class="blue-btn">➕ Yeni Harita Yap</button>
+    </div>
+
+    <div class="card">
+      <h3>2. Misketleri Ayarla</h3>
+      <div id="marble-inputs">
+        <div class="marble-row">
+          <input type="text" class="m-name" value="Misket 1">
+          <label class="file-label">🖼️ Fotoğraf Seç <input type="file" class="m-img" accept="image/*"></label>
+        </div>
+        <div class="marble-row">
+          <input type="text" class="m-name" value="Misket 2">
+          <label class="file-label">🖼️ Fotoğraf Seç <input type="file" class="m-img" accept="image/*"></label>
+        </div>
+      </div>
+      <button id="btn-add-marble-input" class="small-btn">+ Misket Ekle</button>
+    </div>
+
+    <button id="btn-start-race" class="start-btn">🚀 YARIŞI BAŞLAT!</button>
+  </div>
+
+  <!-- MOD 3: BİTİŞ EKRANI -->
+  <div id="winner-modal" class="overlay-panel center-panel" style="display:none;">
+    <h1 id="winner-title">🏆 KAZANAN: -</h1>
+    <button id="btn-restart" class="start-btn">🔄 Yeniden Başlat</button>
+    <button id="btn-back-menu" class="blue-btn">🏠 Menüye Dön</button>
+  </div>
+
   <script src="js/main.js"></script>
 </body>
 </html>
