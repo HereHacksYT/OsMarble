@@ -15,7 +15,6 @@
   <div id="editor-ui" class="panel top-panel" style="display:none;">
     <input type="text" id="map-name" placeholder="Harita Adı..." value="Çılgın Düşüş">
     <button id="btn-walls" class="btn blue">🧱 Yan Duvarlar: AÇIK</button>
-    <button id="btn-rotate" class="btn orange">🔄 Açı: <span id="angle-text">0°</span></button>
     <button id="btn-save" class="btn green">💾 Kaydet</button>
     <button id="btn-clear" class="btn red">🗑️ Tümünü Sil</button>
     <button id="btn-to-menu" class="btn gray">🏠 Menü</button>
@@ -25,9 +24,13 @@
   <div id="palette-bar" class="palette" style="display:none;">
     <div class="p-item selected" data-type="start">🚀 Başlangıç</div>
     <div class="p-item" data-type="flat">🧱 Düz Yol</div>
+    <div class="p-item" data-type="ramp-down">📐 Sağ Rampa</div>
+    <div class="p-item" data-type="ramp-up">📐 Sol Rampa</div>
     <div class="p-item" data-type="spinner">🔄 Dönen Pervane</div>
+    <div class="p-item" data-type="lava">🔥 Yanma Parçası</div>
     <div class="p-item" data-type="disappear">⏱️ 1sn Yol</div>
     <div class="p-item" data-type="finish">🏁 Bitiş</div>
+    <div class="p-item action-btn" data-type="rotate_tool">🔄 PARÇAYI DÖNDÜR</div>
     <div class="p-item delete-btn" data-type="eraser">🧹 TEK TEK SİL</div>
   </div>
 
