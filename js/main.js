@@ -1,222 +1,241 @@
 let scene, camera, renderer, world;
-let mapObjects = [];
-let marbles = [];
-let currentMap = null;
-let isEditMode = false;
+let mapObjects = [], marbles = [];
+let isEditing = false, isRacing = false;
+let draggedType = null;
 
-// Tıklama tespiti için (Raycaster)
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
+// Kayıtlı Haritalar (LocalStorage + Varsayılan)
+let savedMaps = JSON.parse(localStorage.getItem('my_marble_maps')) || {
+  "Varsayılan Rampa": [
+    { type: "flat", pos: [0, 8, 0], rot: [0,0,0] },
+    { type: "ramp", pos: [0, 4, 8], rot: [0.3,0,0] },
+    { type: "finish", pos: [0, -1, 18], rot: [0,0,0] }
+  ]
+};
+
+let currentMapData = [];
 
 function init() {
-  // 1. Three.js Sahnesi
+  // THREE.JS SAHNESİ
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x080911);
+  scene.background = new THREE.Color(0x0a0b10);
 
-  // 2. Kamera
   camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(0, 18, 35);
-  camera.lookAt(0, 0, 15);
+  camera.position.set(0, 15, 30);
 
-  // 3. Renderer
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true;
   document.body.appendChild(renderer.domElement);
 
-  // 4. Işıklar
-  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  dirLight.position.set(20, 40, 20);
-  dirLight.castShadow = true;
-  scene.add(dirLight);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const light = new THREE.DirectionalLight(0xffffff, 0.8);
+  light.position.set(20, 40, 20);
+  scene.add(light);
 
-  // 5. Cannon.js Fizik Dünyası
+  // CANNON.JS FİZİK
   world = new CANNON.World();
-  world.gravity.set(0, -12, 0); // Yerçekimi
+  world.gravity.set(0, -12, 0);
 
-  // Event Listener'lar (Buton Tıklamaları)
-  document.getElementById('btn-map1').addEventListener('click', () => loadMap('map1'));
-  document.getElementById('btn-map2').addEventListener('click', () => loadMap('map2'));
-  document.getElementById('btn-spawn').addEventListener('click', () => spawnMarbles(5));
-  document.getElementById('btn-clear-marbles').addEventListener('click', clearMarbles);
-  document.getElementById('btn-toggle-edit').addEventListener('click', toggleEditMode);
-  document.getElementById('btn-export').addEventListener('click', exportMapJSON);
-
-  window.addEventListener('click', onSceneClick);
-  window.addEventListener('resize', onWindowResize);
-
-  // Harita 1 ile Başlat
-  loadMap('map1');
-
-  // Oyun Döngüsü
+  setupUIEvents();
+  updateMapSelectOptions();
   animate();
 }
 
-// HARİTA YÜKLEME
-function loadMap(mapKey) {
-  currentMap = JSON.parse(JSON.stringify(MAPS[mapKey])); // Derin kopya
-
-  // Eski platformları kaldır
-  mapObjects.forEach(obj => {
-    scene.remove(obj.mesh);
-    world.remove(obj.body);
+// DRAG & DROP HARİTA TASARIMI
+function setupUIEvents() {
+  document.querySelectorAll('.palette-item').forEach(el => {
+    el.addEventListener('dragstart', (e) => draggedType = e.target.dataset.type);
   });
-  mapObjects = [];
 
-  clearMarbles();
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (!isEditing || !draggedType) return;
 
-  // Platformları Çiz ve Fizik Ekle
-  currentMap.platforms.forEach(p => createPlatform(p.pos, p.size, p.color));
+    // Farenin 3D Dünyadaki Karşılığını Hesapla
+    const vec = new THREE.Vector3(
+      (e.clientX / window.innerWidth) * 2 - 1,
+      -(e.clientY / window.innerHeight) * 2 + 1,
+      0.5
+    );
+    vec.unproject(camera);
+    const dir = vec.sub(camera.position).normalize();
+    const distance = -camera.position.y / dir.y;
+    const pos = camera.position.clone().add(dir.multiplyScalar(distance));
+
+    // Parça Ekle
+    const newPiece = { type: draggedType, pos: [Math.round(pos.x), Math.round(pos.y), Math.round(pos.z)], rot: [draggedType === 'ramp' ? 0.3 : 0, 0, 0] };
+    currentMapData.push(newPiece);
+    renderPiece(newPiece);
+  });
+
+  // MENÜ BUTONLARI
+  document.getElementById('btn-open-editor').onclick = () => setMode('editor');
+  document.getElementById('btn-go-menu').onclick = () => setMode('menu');
+  document.getElementById('btn-save-map').onclick = saveCurrentMap;
+  document.getElementById('btn-start-race').onclick = startRace;
+  document.getElementById('btn-restart').onclick = startRace;
+  document.getElementById('btn-back-menu').onclick = () => setMode('menu');
+
+  // MİSKET GİRDİSİ EKLEME
+  document.getElementById('btn-add-marble-input').onclick = () => {
+    const container = document.getElementById('marble-inputs');
+    const count = container.children.length + 1;
+    const div = document.createElement('div');
+    div.className = 'marble-row';
+    div.innerHTML = `<input type="text" class="m-name" value="Misket ${count}"><label class="file-label">🖼️ Fotoğraf Seç <input type="file" class="m-img" accept="image/*"></label>`;
+    container.appendChild(div);
+  };
 }
 
-function createPlatform(pos, size, color = 0x3498db) {
-  // Visual
-  const geo = new THREE.BoxGeometry(size[0], size[1], size[2]);
-  const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.3 });
+// SAHNEYE PARÇA ÇİZME
+function renderPiece(p) {
+  let geo = new THREE.BoxGeometry(6, 0.5, 8);
+  let color = p.type === 'flat' ? 0x3498db : (p.type === 'ramp' ? 0xe67e22 : 0xe74c3c);
+  if(p.type === 'finish') geo = new THREE.BoxGeometry(8, 0.2, 3);
+
+  const mat = new THREE.MeshStandardMaterial({ color });
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(...pos);
-  mesh.receiveShadow = true;
-  mesh.castShadow = true;
+  mesh.position.set(...p.pos);
+  mesh.rotation.set(...p.rot);
   scene.add(mesh);
 
-  // Physics
-  const shape = new CANNON.Box(new CANNON.Vec3(size[0]/2, size[1]/2, size[2]/2));
-  const body = new CANNON.Body({ mass: 0 }); // Sabit
+  const shape = new CANNON.Box(new CANNON.Vec3(geo.parameters.width/2, geo.parameters.height/2, geo.parameters.depth/2));
+  const body = new CANNON.Body({ mass: 0 });
   body.addShape(shape);
-  body.position.set(...pos);
+  body.position.set(...p.pos);
+  body.quaternion.setFromEuler(...p.rot);
   world.addBody(body);
 
-  mapObjects.push({ mesh, body, size, color });
+  mapObjects.push({ mesh, body, type: p.type });
 }
 
-// MİSKET (TOP) BIRTMA
-function spawnMarbles(count = 5) {
-  if (!currentMap) return;
+// MODLAR ARASI GEÇİŞ
+function setMode(mode) {
+  isEditing = (mode === 'editor');
+  isRacing = (mode === 'race');
 
-  const colors = [0xe74c3c, 0xf1c40f, 0x2ecc71, 0x9b59b6, 0xe91e63, 0x00d2d3];
+  document.getElementById('menu-ui').style.display = mode === 'menu' ? 'block' : 'none';
+  document.getElementById('editor-ui').style.display = isEditing ? 'block' : 'none';
+  document.getElementById('palette-bar').style.display = isEditing ? 'flex' : 'none';
+  document.getElementById('winner-modal').style.display = mode === 'winner' ? 'block' : 'none';
 
-  for (let i = 0; i < count; i++) {
-    const radius = 0.5 + Math.random() * 0.2;
-    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+  clearScene();
 
-    // Görsel
-    const geo = new THREE.SphereGeometry(radius, 32, 32);
-    const mat = new THREE.MeshStandardMaterial({ color: randomColor, metalness: 0.4, roughness: 0.1 });
+  if (isEditing) {
+    currentMapData = [];
+    camera.position.set(0, 20, 25);
+    camera.lookAt(0, 0, 0);
+  } else if (mode === 'menu') {
+    loadSelectedMap();
+  }
+}
+
+function clearScene() {
+  mapObjects.forEach(o => { scene.remove(o.mesh); world.remove(o.body); });
+  marbles.forEach(m => { scene.remove(m.mesh); world.remove(m.body); });
+  mapObjects = []; marbles = [];
+}
+
+function loadSelectedMap() {
+  clearScene();
+  const selectedName = document.getElementById('map-select').value;
+  currentMapData = savedMaps[selectedName] || [];
+  currentMapData.forEach(p => renderPiece(p));
+}
+
+function saveCurrentMap() {
+  const name = document.getElementById('map-name-input').value || "Isimsiz Harita";
+  savedMaps[name] = currentMapData;
+  localStorage.setItem('my_marble_maps', JSON.stringify(savedMaps));
+  updateMapSelectOptions();
+  alert("Harita Kaydedildi!");
+  setMode('menu');
+}
+
+function updateMapSelectOptions() {
+  const select = document.getElementById('map-select');
+  select.innerHTML = '';
+  Object.keys(savedMaps).forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name; opt.innerText = name;
+    select.appendChild(opt);
+  });
+}
+
+// YARIŞI BAŞLAT VE MİSKETLERE FOTOĞRAF KAPLA
+async function startRace() {
+  setMode('race');
+  loadSelectedMap();
+
+  const rows = document.querySelectorAll('.marble-row');
+  const textureLoader = new THREE.TextureLoader();
+
+  for (let i = 0; i < rows.length; i++) {
+    const name = rows[i].querySelector('.m-name').value;
+    const fileInput = rows[i].querySelector('.m-img');
+
+    let mat = new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff });
+
+    // Fotoğraf Seçilmişse Dokuyu Kapla
+    if (fileInput.files && fileInput.files[0]) {
+      const url = URL.createObjectURL(fileInput.files[0]);
+      const texture = await new Promise(resolve => textureLoader.load(url, resolve));
+      mat = new THREE.MeshStandardMaterial({ map: texture });
+    }
+
+    // Visual
+    const geo = new THREE.SphereGeometry(0.8, 32, 32);
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.castShadow = true;
     scene.add(mesh);
 
-    // Fizik
-    const shape = new CANNON.Sphere(radius);
+    // Physics
+    const shape = new CANNON.Sphere(0.8);
     const body = new CANNON.Body({ mass: 2 });
     body.addShape(shape);
-
-    // Doğma noktasında hafif rastgele sapma ve hız ver
-    const spawnX = currentMap.spawn.x + (Math.random() - 0.5) * 2;
-    const spawnZ = currentMap.spawn.z + (Math.random() - 0.5) * 2;
-    body.position.set(spawnX, currentMap.spawn.y + i * 1.2, spawnZ);
-    
-    // Ufak bir itiş kuvveti ver (Kendi Kendine Hareket)
-    body.velocity.set((Math.random() - 0.5) * 4, -2, (Math.random() - 0.5) * 4);
-
+    body.position.set((i - rows.length / 2) * 2, 12, 0); // Başlangıç Yan Yana
     world.addBody(body);
-    marbles.push({ mesh, body });
+
+    marbles.push({ mesh, body, name });
   }
-}
-
-function clearMarbles() {
-  marbles.forEach(m => {
-    scene.remove(m.mesh);
-    world.remove(m.body);
-  });
-  marbles = [];
-}
-
-// HARİTA EDİTÖRÜ (Tıklayarak Blok Koyma)
-function toggleEditMode() {
-  isEditMode = !isEditMode;
-  const btn = document.getElementById('btn-toggle-edit');
-  const info = document.getElementById('edit-info');
-  const exportBtn = document.getElementById('btn-export');
-
-  if (isEditMode) {
-    btn.innerText = "Mode: Düzenleme Açık!";
-    btn.style.background = "#00c853";
-    info.style.display = "block";
-    exportBtn.style.display = "block";
-  } else {
-    btn.innerText = "Mode: İzleyici (Editörü Aç)";
-    btn.style.background = "#ff9100";
-    info.style.display = "none";
-    exportBtn.style.display = "none";
-  }
-}
-
-function onSceneClick(event) {
-  // Arayüz tıklamalarını yoksay
-  if (event.clientX < 260 && event.clientY < 400) return;
-  if (!isEditMode) return;
-
-  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-  raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObjects(mapObjects.map(o => o.mesh));
-
-  if (intersects.length > 0) {
-    const hit = intersects[0];
-    // Tıklanan yüzeyin üstüne yeni blok koy
-    const newPos = [
-      Math.round(hit.point.x),
-      Math.round(hit.point.y + 0.5),
-      Math.round(hit.point.z)
-    ];
-    const newSize = [4, 0.5, 4];
-    const randomColor = Math.random() * 0xffffff;
-
-    createPlatform(newPos, newSize, randomColor);
-    currentMap.platforms.push({ pos: newPos, size: newSize, color: randomColor });
-  }
-}
-
-function exportMapJSON() {
-  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentMap, null, 2));
-  const downloadAnchor = document.createElement('a');
-  downloadAnchor.setAttribute("href", dataStr);
-  downloadAnchor.setAttribute("download", "custom_map.json");
-  document.body.appendChild(downloadAnchor);
-  downloadAnchor.click();
-  downloadAnchor.remove();
 }
 
 // OYUN DÖNGÜSÜ
 function animate() {
   requestAnimationFrame(animate);
-
   world.step(1 / 60);
 
-  // Misketlerin Konumlarını Güncelle
-  for (let i = marbles.length - 1; i >= 0; i--) {
-    const m = marbles[i];
-    m.mesh.position.copy(m.body.position);
-    m.mesh.quaternion.copy(m.body.quaternion);
+  if (isRacing) {
+    let leader = null;
+    let maxZ = -999;
 
-    // Çok aşağı düşen misketleri sil
-    if (m.body.position.y < -25) {
-      scene.remove(m.mesh);
-      world.remove(m.body);
-      marbles.splice(i, 1);
+    marbles.forEach(m => {
+      m.mesh.position.copy(m.body.position);
+      m.mesh.quaternion.copy(m.body.quaternion);
+
+      // En Öndeki Misketi Bul (Kamera Takibi İçin)
+      if (m.mesh.position.z > maxZ) {
+        maxZ = m.mesh.position.z;
+        leader = m;
+      }
+
+      // Bitiş Çizgisine Ulaştı mı?
+      mapObjects.filter(o => o.type === 'finish').forEach(f => {
+        if (m.mesh.position.distanceTo(f.mesh.position) < 2.5) {
+          isRacing = false;
+          document.getElementById('winner-title').innerText = `🏆 KAZANAN: ${m.name}!`;
+          setMode('winner');
+        }
+      });
+    });
+
+    // Kamerayı Lider Miskete Odakla
+    if (leader) {
+      camera.position.lerp(new THREE.Vector3(leader.mesh.position.x, leader.mesh.position.y + 6, leader.mesh.position.z - 10), 0.1);
+      camera.lookAt(leader.mesh.position);
     }
   }
 
   renderer.render(scene, camera);
-}
-
-function onWindowResize() {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
 window.onload = init;
