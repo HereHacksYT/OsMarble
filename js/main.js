@@ -1,4 +1,4 @@
-const { Engine, Bodies, Composite, Body, Events } = Matter;
+const { Engine, Bodies, Composite, Body, Events, Query } = Matter;
 
 let engine, canvas, ctx;
 let currentMode = 'menu';
@@ -7,7 +7,6 @@ let editorMapPieces = [];
 let marbles = [];
 let startPoint = { x: 400, y: 100 };
 
-let currentAngle = 0;
 let enableSideWalls = true;
 let leftWall, rightWall;
 
@@ -17,17 +16,18 @@ let startDragY = 0;
 let initialCameraY = 0;
 let hasDragged = false;
 
-let savedMaps = JSON.parse(localStorage.getItem('m_maps_2d_v4')) || {
+let savedMaps = JSON.parse(localStorage.getItem('m_maps_2d_v5')) || {
   "Çılgın Parkur": {
     start: { x: 400, y: 80 },
     enableSideWalls: true,
     pieces: [
       { type: 'flat', x: 400, y: 160, angle: 0 },
-      { type: 'spinner', x: 400, y: 320, angle: 0 },
-      { type: 'flat', x: 500, y: 450, angle: 0.4 },
-      { type: 'disappear', x: 350, y: 600, angle: 0 },
-      { type: 'flat', x: 250, y: 720, angle: -0.4 },
-      { type: 'finish', x: 400, y: 880, angle: 0 }
+      { type: 'ramp-down', x: 520, y: 280, angle: 0 },
+      { type: 'spinner', x: 400, y: 400, angle: 0 },
+      { type: 'lava', x: 400, y: 520, angle: 0 },
+      { type: 'ramp-up', x: 280, y: 640, angle: 0 },
+      { type: 'disappear', x: 400, y: 760, angle: 0 },
+      { type: 'finish', x: 400, y: 900, angle: 0 }
     ]
   }
 };
@@ -92,13 +92,6 @@ function setupEvents() {
     };
   });
 
-  document.getElementById('btn-rotate').onclick = () => {
-    let deg = Math.round(currentAngle * (180 / Math.PI));
-    deg = (deg + 15) > 60 ? -60 : (deg + 15);
-    currentAngle = deg * (Math.PI / 180);
-    document.getElementById('angle-text').innerText = `${deg}°`;
-  };
-
   document.getElementById('btn-walls').onclick = () => {
     enableSideWalls = !enableSideWalls;
     const btn = document.getElementById('btn-walls');
@@ -127,30 +120,64 @@ function setupEvents() {
     if (currentMode !== 'editor') return;
 
     if (!hasDragged && e.clientY > 80 && e.clientY < window.innerHeight - 80) {
-      const x = Math.round(e.clientX / 20) * 20;
-      const y = Math.round((e.clientY + cameraY) / 20) * 20;
+      const clickX = e.clientX;
+      const clickY = e.clientY + cameraY;
 
+      // DÜNYADAKİ TÜM BLOKLAR
+      const allBodies = Composite.allBodies(engine.world);
+
+      // 1) SİLGİ MODU (KESİN VE KOLAY SİLME)
       if (selectedTileType === 'eraser') {
-        const clickedBody = Matter.Query.point(Composite.allBodies(engine.world), { x, y })[0];
-        if (clickedBody && clickedBody.pieceType) {
-          Composite.remove(engine.world, clickedBody);
-          editorMapPieces = editorMapPieces.filter(p => !(Math.abs(p.x - clickedBody.position.x) < 10 && Math.abs(p.y - clickedBody.position.y) < 10));
+        const found = allBodies.find(b => {
+          if (!b.pieceType) return false;
+          return Math.hypot(b.position.x - clickX, b.position.y - clickY) < 50;
+        });
+
+        if (found) {
+          Composite.remove(engine.world, found);
+          editorMapPieces = editorMapPieces.filter(p => p.id !== found.pieceId);
         }
         isDraggingCamera = false;
         return;
       }
 
+      // 2) PARÇAYI ÜSTÜNE BASARAK DÖNDÜR
+      if (selectedTileType === 'rotate_tool') {
+        const found = allBodies.find(b => {
+          if (!b.pieceType) return false;
+          return Math.hypot(b.position.x - clickX, b.position.y - clickY) < 50;
+        });
+
+        if (found) {
+          const newAngle = found.angle + (Math.PI / 6); // 30 derece döndür
+          Body.setAngle(found, newAngle);
+          
+          const targetPiece = editorMapPieces.find(p => p.id === found.pieceId);
+          if (targetPiece) targetPiece.angle = newAngle;
+        }
+        isDraggingCamera = false;
+        return;
+      }
+
+      // 3) BAŞLANGIÇ NOKTASI KOY
+      const snapX = Math.round(clickX / 20) * 20;
+      const snapY = Math.round(clickY / 20) * 20;
+
       if (selectedTileType === 'start') {
-        startPoint = { x, y };
+        startPoint = { x: snapX, y: snapY };
       } else {
+        // 4) NORMAL PARÇA / BİTİŞ KOY
         if (selectedTileType === 'finish') {
           editorMapPieces = editorMapPieces.filter(p => p.type !== 'finish');
           const oldFinish = Composite.allBodies(engine.world).find(b => b.pieceType === 'finish');
           if (oldFinish) Composite.remove(engine.world, oldFinish);
         }
 
-        editorMapPieces.push({ type: selectedTileType, x, y, angle: currentAngle });
-        createMapBody(selectedTileType, x, y, currentAngle);
+        const newId = Date.now() + Math.random();
+        const initialAngle = selectedTileType === 'ramp-down' ? 0.35 : (selectedTileType === 'ramp-up' ? -0.35 : 0);
+
+        editorMapPieces.push({ id: newId, type: selectedTileType, x: snapX, y: snapY, angle: initialAngle });
+        createMapBody(selectedTileType, snapX, snapY, initialAngle, newId);
       }
     }
 
@@ -175,12 +202,19 @@ function setupEvents() {
   };
 }
 
-function createMapBody(type, x, y, angle = 0) {
+function createMapBody(type, x, y, angle = 0, id = Date.now()) {
   let body;
   if (type === 'flat') {
     body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, angle, renderColor: '#3498db' });
+  } else if (type === 'ramp-down') {
+    body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, angle: angle || 0.35, renderColor: '#e67e22' });
+  } else if (type === 'ramp-up') {
+    body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, angle: angle || -0.35, renderColor: '#e67e22' });
   } else if (type === 'spinner') {
     body = Bodies.rectangle(x, y, 180, 18, { isStatic: true, renderColor: '#f1c40f' });
+  } else if (type === 'lava') {
+    // YANMA PARÇASI
+    body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, angle, renderColor: '#d32f2f', label: 'lava' });
   } else if (type === 'disappear') {
     body = Bodies.rectangle(x, y, 140, 20, { isStatic: true, angle, renderColor: '#e74c3c' });
     body.isDisappearing = false;
@@ -190,13 +224,14 @@ function createMapBody(type, x, y, angle = 0) {
 
   if (body) {
     body.pieceType = type;
+    body.pieceId = id;
     Composite.add(engine.world, body);
   }
 }
 
 function setupSideWalls(maxY) {
   if (!enableSideWalls) return;
-  const wallHeight = maxY + 1000;
+  const wallHeight = maxY + 1200;
   leftWall = Bodies.rectangle(10, wallHeight / 2, 20, wallHeight, { isStatic: true, renderColor: '#34495e' });
   rightWall = Bodies.rectangle(canvas.width - 10, wallHeight / 2, 20, wallHeight, { isStatic: true, renderColor: '#34495e' });
   Composite.add(engine.world, [leftWall, rightWall]);
@@ -205,7 +240,7 @@ function setupSideWalls(maxY) {
 function saveMap() {
   const name = document.getElementById('map-name').value || "Yeni Harita";
   savedMaps[name] = { start: startPoint, pieces: editorMapPieces, enableSideWalls };
-  localStorage.setItem('m_maps_2d_v4', JSON.stringify(savedMaps));
+  localStorage.setItem('m_maps_2d_v5', JSON.stringify(savedMaps));
   updateMapDropdown();
   alert("Harita Kaydedildi!");
   setMode('menu');
@@ -230,7 +265,7 @@ function loadSelectedMapToWorld() {
 
   let maxPieceY = 1000;
   mapData.pieces.forEach(p => {
-    createMapBody(p.type, p.x, p.y, p.angle || 0);
+    createMapBody(p.type, p.x, p.y, p.angle || 0, p.id || Date.now());
     if (p.y > maxPieceY) maxPieceY = p.y;
   });
 
@@ -270,6 +305,17 @@ async function startRace() {
     e.pairs.forEach(pair => {
       const { bodyA, bodyB } = pair;
 
+      // YANMA PARÇASINA ÇARPINCA BAŞTAN BAŞLA
+      const isLava = bodyA.label === 'lava' || bodyB.label === 'lava';
+      if (isLava) {
+        const marbleBody = bodyA.label === 'lava' ? bodyB : bodyA;
+        if (marbleBody.label === 'Circle Body') {
+          Body.setPosition(marbleBody, { x: startPoint.x + (Math.random() * 20 - 10), y: startPoint.y });
+          Body.setVelocity(marbleBody, { x: 0, y: 0 });
+        }
+      }
+
+      // YOK OLAN PARÇA
       [bodyA, bodyB].forEach(b => {
         if (b.pieceType === 'disappear' && !b.isDisappearing) {
           b.isDisappearing = true;
@@ -278,6 +324,7 @@ async function startRace() {
         }
       });
 
+      // BİTİŞ KONTROLÜ
       const isFinish = bodyA.label === 'finish' || bodyB.label === 'finish';
       if (isFinish) {
         const marbleBody = bodyA.label === 'finish' ? bodyB : bodyA;
@@ -343,6 +390,13 @@ function drawLoop() {
       ctx.fillStyle = b.renderColor || '#3498db';
       const width = b.pieceType === 'spinner' ? 180 : 140;
       ctx.fillRect(-width/2, -10, width, 20);
+      
+      if (b.pieceType === 'lava') {
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText("🔥 YANMA", 0, 3);
+      }
     }
     ctx.restore();
   });
