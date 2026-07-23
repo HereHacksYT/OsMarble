@@ -1,27 +1,30 @@
-const { Engine, Bodies, Composite, Events } = Matter;
+const { Engine, Bodies, Composite, Body, Events } = Matter;
 
 let engine, canvas, ctx;
 let currentMode = 'menu';
 let selectedTileType = 'start';
 let editorMapPieces = [];
 let marbles = [];
-let startPoint = { x: 400, y: 100 }; // Varsayılan Doğma Noktası
+let startPoint = { x: 400, y: 100 };
 
-// KAMERA (YUKARI - AŞAĞI GEZİNME)
+// KAMERA KAYDIRMA
 let cameraY = 0;
 let isDraggingCamera = false;
-let lastMouseY = 0;
+let startDragY = 0;
+let initialCameraY = 0;
+let hasDragged = false;
 
 // Kayıtlı Haritalar
-let savedMaps = JSON.parse(localStorage.getItem('m_maps_2d_v2')) || {
+let savedMaps = JSON.parse(localStorage.getItem('m_maps_2d_v3')) || {
   "Varsayılan Parkur": {
-    start: { x: 400, y: 50 },
+    start: { x: 400, y: 80 },
     pieces: [
-      { type: 'flat', x: 400, y: 120 },
-      { type: 'ramp-down', x: 550, y: 220 },
-      { type: 'disappear', x: 450, y: 350 }, // 1s sonra yok olan yol
-      { type: 'ramp-up', x: 300, y: 480 },
-      { type: 'finish', x: 400, y: 600 }
+      { type: 'flat', x: 400, y: 160 },
+      { type: 'spinner', x: 400, y: 300 },
+      { type: 'ramp-down', x: 520, y: 420 },
+      { type: 'disappear', x: 380, y: 560 },
+      { type: 'ramp-up', x: 250, y: 700 },
+      { type: 'finish', x: 400, y: 850 }
     ]
   }
 };
@@ -40,9 +43,15 @@ function init() {
   updateMapDropdown();
   setMode('menu');
 
-  // Fizik Adımı Döngüsü
   setInterval(() => {
     Engine.update(engine, 1000 / 60);
+
+    // Dönen parçaları (Spinner) sürekli döndür
+    Composite.allBodies(engine.world).forEach(b => {
+      if (b.pieceType === 'spinner') {
+        Body.setAngle(b, b.angle + 0.08);
+      }
+    });
   }, 1000 / 60);
 
   requestAnimationFrame(drawLoop);
@@ -71,7 +80,6 @@ function clearWorld() {
 }
 
 function setupEvents() {
-  // Palet Butonları
   document.querySelectorAll('.p-item').forEach(el => {
     el.onclick = () => {
       document.querySelectorAll('.p-item').forEach(i => i.classList.remove('selected'));
@@ -80,48 +88,51 @@ function setupEvents() {
     };
   });
 
-  // KAMERA GEZİNME (Fare Orta Tuşu veya Sağ Tık / Kaydırma) VE PARÇA KOYMA
-  canvas.addEventListener('mousedown', (e) => {
-    if (e.button === 1 || e.button === 2) { // Orta veya Sağ Tık Kaydırır
-      isDraggingCamera = true;
-      lastMouseY = e.clientY;
-      return;
-    }
-
+  // EDİTÖR İÇİN SÜRÜKLE - KAYDIR - TIKLA KOY
+  canvas.addEventListener('pointerdown', (e) => {
     if (currentMode !== 'editor') return;
-    if (e.clientY < 80 || e.clientY > window.innerHeight - 80) return;
 
-    // Dünya Koordinatına Dönüştür (Kamera Ofseti Dahil)
-    const x = Math.round(e.clientX / 20) * 20;
-    const y = Math.round((e.clientY + cameraY) / 20) * 20;
+    isDraggingCamera = true;
+    hasDragged = false;
+    startDragY = e.clientY;
+    initialCameraY = cameraY;
+  });
 
-    if (selectedTileType === 'start') {
-      startPoint = { x, y };
-    } else {
-      // Bitiş veya başka bir şey varsa eskisini kaldır (Tek Bitiş Olsun)
-      if (selectedTileType === 'finish') {
-        editorMapPieces = editorMapPieces.filter(p => p.type !== 'finish');
-        const oldFinish = Composite.allBodies(engine.world).find(b => b.pieceType === 'finish');
-        if (oldFinish) Composite.remove(engine.world, oldFinish);
+  canvas.addEventListener('pointermove', (e) => {
+    if (!isDraggingCamera) return;
+
+    const deltaY = e.clientY - startDragY;
+    if (Math.abs(deltaY) > 5) {
+      hasDragged = true; // Sürükleme yapıldığını işaretle (Tıklama ile karışmasın)
+      cameraY = initialCameraY - deltaY;
+    }
+  });
+
+  canvas.addEventListener('pointerup', (e) => {
+    if (currentMode !== 'editor') return;
+
+    // Sürükleme yapılmadıysa, tıklanan yere parça koy
+    if (!hasDragged && e.clientY > 80 && e.clientY < window.innerHeight - 80) {
+      const x = Math.round(e.clientX / 20) * 20;
+      const y = Math.round((e.clientY + cameraY) / 20) * 20;
+
+      if (selectedTileType === 'start') {
+        startPoint = { x, y };
+      } else {
+        if (selectedTileType === 'finish') {
+          editorMapPieces = editorMapPieces.filter(p => p.type !== 'finish');
+          const oldFinish = Composite.allBodies(engine.world).find(b => b.pieceType === 'finish');
+          if (oldFinish) Composite.remove(engine.world, oldFinish);
+        }
+
+        editorMapPieces.push({ type: selectedTileType, x, y });
+        createMapBody(selectedTileType, x, y);
       }
-
-      editorMapPieces.push({ type: selectedTileType, x, y });
-      createMapBody(selectedTileType, x, y);
     }
+
+    isDraggingCamera = false;
   });
 
-  canvas.addEventListener('mousemove', (e) => {
-    if (isDraggingCamera) {
-      const deltaY = e.clientY - lastMouseY;
-      cameraY -= deltaY; // YUKARI AŞAĞI KAYDIRMA
-      lastMouseY = e.clientY;
-    }
-  });
-
-  window.addEventListener('mouseup', () => isDraggingCamera = false);
-  canvas.addEventListener('contextmenu', e => e.preventDefault()); // Sağ tık menüsünü engelle
-
-  // Menü Aksiyonları
   document.getElementById('btn-open-editor').onclick = () => setMode('editor');
   document.getElementById('btn-to-menu').onclick = () => setMode('menu');
   document.getElementById('btn-menu-back').onclick = () => setMode('menu');
@@ -140,7 +151,6 @@ function setupEvents() {
   };
 }
 
-// HARİTA ELEMANLARI (1 Sn YOK OLAN YOL DAHİL)
 function createMapBody(type, x, y) {
   let body;
   if (type === 'flat') {
@@ -149,8 +159,10 @@ function createMapBody(type, x, y) {
     body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, angle: 0.35, renderColor: '#e67e22' });
   } else if (type === 'ramp-up') {
     body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, angle: -0.35, renderColor: '#e67e22' });
+  } else if (type === 'spinner') {
+    // DÖNEN PARÇA (PERVANE)
+    body = Bodies.rectangle(x, y, 180, 18, { isStatic: true, renderColor: '#f1c40f' });
   } else if (type === 'disappear') {
-    // 1 SANİYE SONRA YOK OLAN PARÇA
     body = Bodies.rectangle(x, y, 140, 20, { isStatic: true, renderColor: '#e74c3c' });
     body.isDisappearing = false;
   } else if (type === 'finish') {
@@ -166,9 +178,9 @@ function createMapBody(type, x, y) {
 function saveMap() {
   const name = document.getElementById('map-name').value || "Yeni Harita";
   savedMaps[name] = { start: startPoint, pieces: editorMapPieces };
-  localStorage.setItem('m_maps_2d_v2', JSON.stringify(savedMaps));
+  localStorage.setItem('m_maps_2d_v3', JSON.stringify(savedMaps));
   updateMapDropdown();
-  alert("Harita Başarıyla Kaydedildi!");
+  alert("Harita Kaydedildi!");
   setMode('menu');
 }
 
@@ -190,7 +202,6 @@ function loadSelectedMapToWorld() {
   mapData.pieces.forEach(p => createMapBody(p.type, p.x, p.y));
 }
 
-// YARIŞ VE ÇARPIŞMA KONTROLLERİ
 async function startRace() {
   setMode('race');
   loadSelectedMapToWorld();
@@ -210,9 +221,8 @@ async function startRace() {
     }
 
     const radius = 16;
-    // BİZİM BELİRLEDİĞİMİZ BAŞLANGIÇ NOKTASINDA DOĞ
-    const body = Bodies.circle(startPoint.x + (i * 35 - 20), startPoint.y, radius, {
-      restitution: 0.6,
+    const body = Bodies.circle(startPoint.x + (i * 30 - 15), startPoint.y, radius, {
+      restitution: 0.7,
       friction: 0.05
     });
 
@@ -220,24 +230,19 @@ async function startRace() {
     marbles.push({ body, name, radius, img: imgObj, color: `hsl(${i * 120}, 80%, 50%)` });
   }
 
-  // 1 SANİYE SONRA YOK OLMA VE BİTİŞ KONTROLÜ
   Events.on(engine, 'collisionStart', (e) => {
     if (currentMode !== 'race') return;
     e.pairs.forEach(pair => {
       const { bodyA, bodyB } = pair;
 
-      // 1) Yok Olan Parça Mantığı
       [bodyA, bodyB].forEach(b => {
         if (b.pieceType === 'disappear' && !b.isDisappearing) {
           b.isDisappearing = true;
-          b.renderColor = '#ff7675'; // Renk değiştir (uyarı)
-          setTimeout(() => {
-            Composite.remove(engine.world, b); // 1 saniye sonra yok et
-          }, 1000);
+          b.renderColor = '#ff7675';
+          setTimeout(() => Composite.remove(engine.world, b), 1000);
         }
       });
 
-      // 2) Bitiş Çizgisi Mantığı
       const isFinish = bodyA.label === 'finish' || bodyB.label === 'finish';
       if (isFinish) {
         const marbleBody = bodyA.label === 'finish' ? bodyB : bodyA;
@@ -251,25 +256,23 @@ async function startRace() {
   });
 }
 
-// CANVAS ÇİZİMİ
 function drawLoop() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   ctx.save();
-  // KAMERA YUKARI/AŞAĞI OFSETİ
   ctx.translate(0, -cameraY);
 
-  // 1. Başlangıç Noktası İkonu Çiz
+  // BAŞLANGIÇ NOKTASI (🚀)
   ctx.fillStyle = '#00e676';
   ctx.beginPath();
-  ctx.arc(startPoint.x, startPoint.y, 20, 0, Math.PI * 2);
+  ctx.arc(startPoint.x, startPoint.y, 22, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = '#000';
-  ctx.font = 'bold 12px sans-serif';
+  ctx.font = 'bold 11px sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText("🚀 BAŞLANGIÇ", startPoint.x, startPoint.y + 4);
 
-  // 2. Harita Bloklarını Çiz
+  // BLOKLARI ÇİZ
   const bodies = Composite.allBodies(engine.world);
   bodies.forEach(b => {
     if (b.label === 'Circle Body') return;
@@ -285,15 +288,22 @@ function drawLoop() {
       ctx.fillText("🏁 BİTİŞ", 0, 4);
     } else {
       ctx.fillStyle = b.renderColor || '#3498db';
-      ctx.fillRect(-70, -10, 140, 20);
+      const width = b.pieceType === 'spinner' ? 180 : 140;
+      ctx.fillRect(-width/2, -10, width, 20);
     }
     ctx.restore();
   });
 
-  // 3. Misketleri Çiz ve Lider Misketi Kamera İle Takip Et (Yarış Modunda)
+  // MİSKETLERİ ÇİZ VE AŞAĞI DÜŞENİ YENİDEN DOĞUR
   let leadingY = 0;
-  marbles.forEach((m, idx) => {
+  marbles.forEach((m) => {
     const { x, y } = m.body.position;
+
+    // DÜŞME KONTROLÜ: En alt bloğun veya kameranın çok altına düştüyse baştan başla!
+    if (y > cameraY + canvas.height + 200 || y > 3000) {
+      Body.setPosition(m.body, { x: startPoint.x, y: startPoint.y });
+      Body.setVelocity(m.body, { x: 0, y: 0 });
+    }
 
     if (y > leadingY) leadingY = y;
 
@@ -319,7 +329,7 @@ function drawLoop() {
     ctx.fillText(m.name, x, y - m.radius - 6);
   });
 
-  // Yarış esnasında kamerayı otomatik en öndeki miskete odakla
+  // Kamera Takibi
   if (currentMode === 'race' && marbles.length > 0) {
     cameraY = leadingY - canvas.height / 2;
   }
