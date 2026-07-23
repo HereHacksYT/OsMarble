@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Marble & Cube Battle Arena</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Three.js & Cannon.es CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+</head>
+<body>
+
+  <div id="ui">
+    <h2>🎮 Arena Seçimi</h2>
+    <div class="map-buttons">
+      <button onclick="changeMap('map1')">🏟️ Harita 1: Düz Rampa</button>
+      <button onclick="changeMap('map2')">⚔️ Harita 2: Arenalar</button>
+    </div>
+    <div class="controls-info">
+      <p><b>W, A, S, D:</b> Hareket Et</p>
+      <p><b>Aşağı düşen elenir!</b></p>
+    </div>
+  </div>
+
+  <script src="js/maps.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
