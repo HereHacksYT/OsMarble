@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>OsMarble</title>
   <link rel="stylesheet" href="style.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
 </head>
 <body>
 
@@ -13,8 +12,7 @@
 
   <!-- EDITÖR ÜST PANEL -->
   <div id="editor-ui" class="panel top-panel" style="display:none;">
-    <input type="text" id="map-name" placeholder="Harita Adı..." value="Çılgın OsMarble">
-    <button id="btn-walls" class="btn blue">🧱 Yan Duvarlar: AÇIK</button>
+    <input type="text" id="map-name" placeholder="Harita Adı..." value="OsMarble Parkuru">
     <button id="btn-save" class="btn green">💾 Kaydet</button>
     <button id="btn-clear" class="btn red">🗑️ Tümünü Sil</button>
     <button id="btn-to-menu" class="btn gray">🏠 Menü</button>
@@ -26,11 +24,7 @@
     <div class="p-item" data-type="flat">🧱 Düz Yol</div>
     <div class="p-item" data-type="ramp-down">📐 Sağ Rampa</div>
     <div class="p-item" data-type="ramp-up">📐 Sol Rampa</div>
-    <div class="p-item" data-type="spinner">🔄 Pervane</div>
-    <div class="p-item" data-type="lava">🔥 Yanma Parçası</div>
-    <div class="p-item" data-type="disappear">⏱️ 1sn Yol</div>
     <div class="p-item" data-type="finish">🏁 Bitiş</div>
-    <div class="p-item action-btn" data-type="rotate_tool">🔄 DÖNDÜR</div>
     <div class="p-item delete-btn" data-type="eraser">🧹 SİL</div>
   </div>
 
@@ -41,7 +35,7 @@
     <div class="box">
       <h3>1. Harita Seç</h3>
       <select id="map-select"></select>
-      <button id="btn-open-editor" class="btn blue">+ Yeni Harita Çiz</button>
+      <button id="btn-open-editor" class="btn blue" style="margin-top:8px; width:100%;">+ Yeni Harita Çiz</button>
     </div>
 
     <div class="box">
@@ -49,11 +43,9 @@
       <div id="marble-list">
         <div class="m-row">
           <input type="text" class="m-name" value="Misket 1">
-          <label class="file-btn">🖼️ Resim <input type="file" class="m-img" accept="image/*"></label>
         </div>
         <div class="m-row">
           <input type="text" class="m-name" value="Misket 2">
-          <label class="file-btn">🖼️ Resim <input type="file" class="m-img" accept="image/*"></label>
         </div>
       </div>
       <button id="btn-add-marble" class="btn small">+ Misket Ekle</button>
@@ -66,9 +58,9 @@
   <div id="winner-ui" class="panel center-panel" style="display:none;">
     <h1 id="winner-text">🏆 KAZANAN: -</h1>
     <button id="btn-restart" class="btn start">🔄 Yeniden Başlat</button>
-    <button id="btn-menu-back" class="btn blue">🏠 Menüye Dön</button>
+    <button id="btn-menu-back" class="btn blue" style="margin-top:8px; width:100%;">🏠 Menüye Dön</button>
   </div>
 
-  <script src="js/main.js"></script>
+  <script src="game.js"></script>
 </body>
 </html>
