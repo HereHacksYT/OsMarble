@@ -5,31 +5,31 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>2D Misket Yarışı & Harita Yapıcı</title>
   <link rel="stylesheet" href="style.css">
-  <!-- 2D Fizik Motoru (Matter.js) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
 </head>
 <body>
 
-  <!-- Oyun Alanı Canvas -->
   <canvas id="game-canvas"></canvas>
 
-  <!-- EDITÖR PANELİ -->
+  <!-- EDITÖR ÜST PANEL -->
   <div id="editor-ui" class="panel top-panel" style="display:none;">
-    <input type="text" id="map-name" placeholder="Harita Adı..." value="Parkur 1">
+    <input type="text" id="map-name" placeholder="Harita Adı..." value="Çılgın Düşüş">
     <button id="btn-save" class="btn green">💾 Haritayı Kaydet</button>
     <button id="btn-clear" class="btn red">🗑️ Temizle</button>
     <button id="btn-to-menu" class="btn blue">🏠 Menüye Dön</button>
   </div>
 
-  <!-- EDITÖR PARÇA SEÇİM PANELİ (Alt Kısım) -->
+  <!-- EDITÖR PARÇA PALETİ -->
   <div id="palette-bar" class="palette" style="display:none;">
-    <div class="p-item selected" data-type="flat">🧱 Düz Yol</div>
+    <div class="p-item selected" data-type="start">🚀 Başlangıç</div>
+    <div class="p-item" data-type="flat">🧱 Düz Yol</div>
     <div class="p-item" data-type="ramp-down">📐 Sağ Rampa</div>
     <div class="p-item" data-type="ramp-up">📐 Sol Rampa</div>
+    <div class="p-item" data-type="disappear">⏱️ 1sn Yol</div>
     <div class="p-item" data-type="finish">🏁 Bitiş</div>
   </div>
 
-  <!-- ANA MENÜ PANELİ -->
+  <!-- ANA MENÜ -->
   <div id="menu-ui" class="panel center-panel">
     <h1>🔴 2D MİSKET YARIŞI 🏆</h1>
     
@@ -57,7 +57,7 @@
     <button id="btn-start" class="btn start">🚀 YARIŞI BAŞLAT!</button>
   </div>
 
-  <!-- BİTİŞ / KAZANAN EKRANI -->
+  <!-- BİTİŞ EKRANI -->
   <div id="winner-ui" class="panel center-panel" style="display:none;">
     <h1 id="winner-text">🏆 KAZANAN: -</h1>
     <button id="btn-restart" class="btn start">🔄 Yeniden Başlat</button>
