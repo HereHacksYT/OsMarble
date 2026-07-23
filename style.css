@@ -142,7 +142,7 @@ input[type="text"], select {
   cursor: pointer; 
   border: none; 
   border-radius: 6px; 
-  padding: 8px 12px; 
+  padding: 10px 14px; 
   font-weight: bold; 
   color: #fff; 
 }
@@ -150,8 +150,6 @@ input[type="text"], select {
 .green { background: #00c853; }
 .red { background: #d50000; }
 .blue { background: #00b0ff; }
-.orange { background: #ff9800; }
 .gray { background: #607d8b; }
-.start { background: #ff9100; font-size: 1.1rem; width: 100%; padding: 10px; margin-top: 5px; }
+.start { background: #ff9100; font-size: 1.1rem; width: 100%; padding: 12px; margin-top: 5px; }
 .small { background: #444; font-size: 0.8rem; }
-.btn:hover { opacity: 0.9; }
