@@ -1,4 +1,4 @@
-const { Engine, Bodies, Composite, Body, Events, Query } = Matter;
+const { Engine, Bodies, Composite, Body, Events } = Matter;
 
 let engine, canvas, ctx;
 let currentMode = 'menu';
@@ -16,18 +16,18 @@ let startDragY = 0;
 let initialCameraY = 0;
 let hasDragged = false;
 
-let savedMaps = JSON.parse(localStorage.getItem('m_maps_2d_v5')) || {
+let savedMaps = JSON.parse(localStorage.getItem('m_maps_2d_v6')) || {
   "Çılgın Parkur": {
     start: { x: 400, y: 80 },
     enableSideWalls: true,
     pieces: [
-      { type: 'flat', x: 400, y: 160, angle: 0 },
-      { type: 'ramp-down', x: 520, y: 280, angle: 0 },
-      { type: 'spinner', x: 400, y: 400, angle: 0 },
-      { type: 'lava', x: 400, y: 520, angle: 0 },
-      { type: 'ramp-up', x: 280, y: 640, angle: 0 },
-      { type: 'disappear', x: 400, y: 760, angle: 0 },
-      { type: 'finish', x: 400, y: 900, angle: 0 }
+      { id: 1, type: 'flat', x: 400, y: 160, angle: 0 },
+      { id: 2, type: 'ramp-down', x: 520, y: 280, angle: 0.35 },
+      { id: 3, type: 'spinner', x: 400, y: 400, angle: 0 },
+      { id: 4, type: 'lava', x: 400, y: 520, angle: 0 },
+      { id: 5, type: 'ramp-up', x: 280, y: 640, angle: -0.35 },
+      { id: 6, type: 'disappear', x: 400, y: 760, angle: 0 },
+      { id: 7, type: 'finish', x: 400, y: 900, angle: 0 }
     ]
   }
 };
@@ -39,10 +39,11 @@ function init() {
   engine = Engine.create();
   engine.gravity.y = 1.2;
 
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
 
   setupEvents();
+  setupCollisions();
   updateMapDropdown();
   setMode('menu');
 
@@ -59,6 +60,11 @@ function init() {
   requestAnimationFrame(drawLoop);
 }
 
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+
 function setMode(mode) {
   currentMode = mode;
   document.getElementById('menu-ui').style.display = mode === 'menu' ? 'block' : 'none';
@@ -70,7 +76,20 @@ function setMode(mode) {
   cameraY = 0;
 
   if (mode === 'editor') {
-    editorMapPieces = [];
+    // Editör moduna geçerken seçili haritayı yükle
+    const selectedName = document.getElementById('map-select').value;
+    if (selectedName && savedMaps[selectedName]) {
+      const mapData = savedMaps[selectedName];
+      startPoint = { ...mapData.start };
+      enableSideWalls = mapData.enableSideWalls !== undefined ? mapData.enableSideWalls : true;
+      editorMapPieces = JSON.parse(JSON.stringify(mapData.pieces || []));
+      
+      editorMapPieces.forEach(p => {
+        createMapBody(p.type, p.x, p.y, p.angle, p.id);
+      });
+    } else {
+      editorMapPieces = [];
+    }
   } else if (mode === 'menu') {
     loadSelectedMapToWorld();
   }
@@ -123,14 +142,13 @@ function setupEvents() {
       const clickX = e.clientX;
       const clickY = e.clientY + cameraY;
 
-      // DÜNYADAKİ TÜM BLOKLAR
       const allBodies = Composite.allBodies(engine.world);
 
-      // 1) SİLGİ MODU (KESİN VE KOLAY SİLME)
+      // 1) TEK TEK SİLME
       if (selectedTileType === 'eraser') {
         const found = allBodies.find(b => {
           if (!b.pieceType) return false;
-          return Math.hypot(b.position.x - clickX, b.position.y - clickY) < 50;
+          return Math.hypot(b.position.x - clickX, b.position.y - clickY) < 60;
         });
 
         if (found) {
@@ -141,15 +159,15 @@ function setupEvents() {
         return;
       }
 
-      // 2) PARÇAYI ÜSTÜNE BASARAK DÖNDÜR
+      // 2) PARÇAYI DÖNDÜRME
       if (selectedTileType === 'rotate_tool') {
         const found = allBodies.find(b => {
           if (!b.pieceType) return false;
-          return Math.hypot(b.position.x - clickX, b.position.y - clickY) < 50;
+          return Math.hypot(b.position.x - clickX, b.position.y - clickY) < 60;
         });
 
         if (found) {
-          const newAngle = found.angle + (Math.PI / 6); // 30 derece döndür
+          const newAngle = found.angle + (Math.PI / 6); // 30 derece
           Body.setAngle(found, newAngle);
           
           const targetPiece = editorMapPieces.find(p => p.id === found.pieceId);
@@ -159,14 +177,13 @@ function setupEvents() {
         return;
       }
 
-      // 3) BAŞLANGIÇ NOKTASI KOY
+      // 3) BAŞLANGIÇ VEYA YENİ PARÇA EKLE
       const snapX = Math.round(clickX / 20) * 20;
       const snapY = Math.round(clickY / 20) * 20;
 
       if (selectedTileType === 'start') {
         startPoint = { x: snapX, y: snapY };
       } else {
-        // 4) NORMAL PARÇA / BİTİŞ KOY
         if (selectedTileType === 'finish') {
           editorMapPieces = editorMapPieces.filter(p => p.type !== 'finish');
           const oldFinish = Composite.allBodies(engine.world).find(b => b.pieceType === 'finish');
@@ -213,7 +230,6 @@ function createMapBody(type, x, y, angle = 0, id = Date.now()) {
   } else if (type === 'spinner') {
     body = Bodies.rectangle(x, y, 180, 18, { isStatic: true, renderColor: '#f1c40f' });
   } else if (type === 'lava') {
-    // YANMA PARÇASI
     body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, angle, renderColor: '#d32f2f', label: 'lava' });
   } else if (type === 'disappear') {
     body = Bodies.rectangle(x, y, 140, 20, { isStatic: true, angle, renderColor: '#e74c3c' });
@@ -240,9 +256,9 @@ function setupSideWalls(maxY) {
 function saveMap() {
   const name = document.getElementById('map-name').value || "Yeni Harita";
   savedMaps[name] = { start: startPoint, pieces: editorMapPieces, enableSideWalls };
-  localStorage.setItem('m_maps_2d_v5', JSON.stringify(savedMaps));
+  localStorage.setItem('m_maps_2d_v6', JSON.stringify(savedMaps));
   updateMapDropdown();
-  alert("Harita Kaydedildi!");
+  alert("Harita Başarıyla Kaydedildi!");
   setMode('menu');
 }
 
@@ -251,7 +267,8 @@ function updateMapDropdown() {
   select.innerHTML = '';
   Object.keys(savedMaps).forEach(m => {
     const opt = document.createElement('option');
-    opt.value = m; opt.innerText = m;
+    opt.value = m; 
+    opt.innerText = m;
     select.appendChild(opt);
   });
 }
@@ -260,16 +277,55 @@ function loadSelectedMapToWorld() {
   clearWorld();
   const name = document.getElementById('map-select').value;
   const mapData = savedMaps[name] || { start: { x: 400, y: 100 }, pieces: [], enableSideWalls: true };
-  startPoint = mapData.start;
+  startPoint = { ...mapData.start };
   enableSideWalls = mapData.enableSideWalls !== undefined ? mapData.enableSideWalls : true;
 
   let maxPieceY = 1000;
-  mapData.pieces.forEach(p => {
+  (mapData.pieces || []).forEach(p => {
     createMapBody(p.type, p.x, p.y, p.angle || 0, p.id || Date.now());
     if (p.y > maxPieceY) maxPieceY = p.y;
   });
 
   setupSideWalls(maxPieceY);
+}
+
+function setupCollisions() {
+  Events.on(engine, 'collisionStart', (e) => {
+    if (currentMode !== 'race') return;
+    e.pairs.forEach(pair => {
+      const { bodyA, bodyB } = pair;
+
+      // 🔥 LAVA TEMASI
+      const isLava = bodyA.label === 'lava' || bodyB.label === 'lava';
+      if (isLava) {
+        const marbleBody = bodyA.label === 'lava' ? bodyB : bodyA;
+        if (marbleBody.label === 'Circle Body') {
+          Body.setPosition(marbleBody, { x: startPoint.x + (Math.random() * 20 - 10), y: startPoint.y });
+          Body.setVelocity(marbleBody, { x: 0, y: 0 });
+        }
+      }
+
+      // ⏱️ YOK OLAN PARÇA
+      [bodyA, bodyB].forEach(b => {
+        if (b.pieceType === 'disappear' && !b.isDisappearing) {
+          b.isDisappearing = true;
+          b.renderColor = '#ff7675';
+          setTimeout(() => Composite.remove(engine.world, b), 1000);
+        }
+      });
+
+      // 🏁 BİTİŞ KONTROLÜ
+      const isFinish = bodyA.label === 'finish' || bodyB.label === 'finish';
+      if (isFinish) {
+        const marbleBody = bodyA.label === 'finish' ? bodyB : bodyA;
+        const winner = marbles.find(m => m.body === marbleBody);
+        if (winner) {
+          document.getElementById('winner-text').innerText = `🏆 KAZANAN: ${winner.name}!`;
+          setMode('winner');
+        }
+      }
+    });
+  });
 }
 
 async function startRace() {
@@ -279,7 +335,7 @@ async function startRace() {
   const rows = document.querySelectorAll('.m-row');
   
   for (let i = 0; i < rows.length; i++) {
-    const name = rows[i].querySelector('.m-name').value;
+    const name = rows[i].querySelector('.m-name').value || `Misket ${i + 1}`;
     const fileInput = rows[i].querySelector('.m-img');
     let imgObj = null;
 
@@ -299,43 +355,6 @@ async function startRace() {
     Composite.add(engine.world, body);
     marbles.push({ body, name, radius, img: imgObj, color: `hsl(${i * 120}, 80%, 50%)` });
   }
-
-  Events.on(engine, 'collisionStart', (e) => {
-    if (currentMode !== 'race') return;
-    e.pairs.forEach(pair => {
-      const { bodyA, bodyB } = pair;
-
-      // YANMA PARÇASINA ÇARPINCA BAŞTAN BAŞLA
-      const isLava = bodyA.label === 'lava' || bodyB.label === 'lava';
-      if (isLava) {
-        const marbleBody = bodyA.label === 'lava' ? bodyB : bodyA;
-        if (marbleBody.label === 'Circle Body') {
-          Body.setPosition(marbleBody, { x: startPoint.x + (Math.random() * 20 - 10), y: startPoint.y });
-          Body.setVelocity(marbleBody, { x: 0, y: 0 });
-        }
-      }
-
-      // YOK OLAN PARÇA
-      [bodyA, bodyB].forEach(b => {
-        if (b.pieceType === 'disappear' && !b.isDisappearing) {
-          b.isDisappearing = true;
-          b.renderColor = '#ff7675';
-          setTimeout(() => Composite.remove(engine.world, b), 1000);
-        }
-      });
-
-      // BİTİŞ KONTROLÜ
-      const isFinish = bodyA.label === 'finish' || bodyB.label === 'finish';
-      if (isFinish) {
-        const marbleBody = bodyA.label === 'finish' ? bodyB : bodyA;
-        const winner = marbles.find(m => m.body === marbleBody);
-        if (winner) {
-          document.getElementById('winner-text').innerText = `🏆 KAZANAN: ${winner.name}!`;
-          setMode('winner');
-        }
-      }
-    });
-  });
 }
 
 function drawLoop() {
@@ -352,6 +371,7 @@ function drawLoop() {
   });
   const deathY = lowestY + 250;
 
+  // DÜŞME ÇİZGİSİ
   ctx.fillStyle = 'rgba(255, 76, 76, 0.35)';
   ctx.fillRect(0, deathY, canvas.width, 400);
   ctx.strokeStyle = '#ff1744';
@@ -364,6 +384,7 @@ function drawLoop() {
   ctx.font = 'bold 14px sans-serif';
   ctx.fillText("🔥 TEHLİKE - DÜŞEN BAŞTAN BAŞLAR 🔥", canvas.width / 2, deathY + 25);
 
+  // BAŞLANGIÇ NOKTASI
   ctx.fillStyle = '#00e676';
   ctx.beginPath();
   ctx.arc(startPoint.x, startPoint.y, 22, 0, Math.PI * 2);
@@ -373,6 +394,7 @@ function drawLoop() {
   ctx.textAlign = 'center';
   ctx.fillText("🚀 BAŞLANGIÇ", startPoint.x, startPoint.y + 4);
 
+  // BLOKLARI ÇİZ
   const bodies = Composite.allBodies(engine.world);
   bodies.forEach(b => {
     if (b.label === 'Circle Body') return;
@@ -401,6 +423,7 @@ function drawLoop() {
     ctx.restore();
   });
 
+  // MİSKETLERİ ÇİZ
   let leadingY = 0;
   marbles.forEach((m) => {
     const { x, y } = m.body.position;
@@ -434,6 +457,7 @@ function drawLoop() {
     ctx.fillText(m.name, x, y - m.radius - 6);
   });
 
+  // YARIŞTA KAMERA TAKİBİ
   if (currentMode === 'race' && marbles.length > 0) {
     cameraY = leadingY - canvas.height / 2;
   }
