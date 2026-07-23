@@ -7,24 +7,27 @@ let editorMapPieces = [];
 let marbles = [];
 let startPoint = { x: 400, y: 100 };
 
-// KAMERA KAYDIRMA
+let currentAngle = 0;
+let enableSideWalls = true;
+let leftWall, rightWall;
+
 let cameraY = 0;
 let isDraggingCamera = false;
 let startDragY = 0;
 let initialCameraY = 0;
 let hasDragged = false;
 
-// Kayıtlı Haritalar
-let savedMaps = JSON.parse(localStorage.getItem('m_maps_2d_v3')) || {
-  "Varsayılan Parkur": {
+let savedMaps = JSON.parse(localStorage.getItem('m_maps_2d_v4')) || {
+  "Çılgın Parkur": {
     start: { x: 400, y: 80 },
+    enableSideWalls: true,
     pieces: [
-      { type: 'flat', x: 400, y: 160 },
-      { type: 'spinner', x: 400, y: 300 },
-      { type: 'ramp-down', x: 520, y: 420 },
-      { type: 'disappear', x: 380, y: 560 },
-      { type: 'ramp-up', x: 250, y: 700 },
-      { type: 'finish', x: 400, y: 850 }
+      { type: 'flat', x: 400, y: 160, angle: 0 },
+      { type: 'spinner', x: 400, y: 320, angle: 0 },
+      { type: 'flat', x: 500, y: 450, angle: 0.4 },
+      { type: 'disappear', x: 350, y: 600, angle: 0 },
+      { type: 'flat', x: 250, y: 720, angle: -0.4 },
+      { type: 'finish', x: 400, y: 880, angle: 0 }
     ]
   }
 };
@@ -46,7 +49,6 @@ function init() {
   setInterval(() => {
     Engine.update(engine, 1000 / 60);
 
-    // Dönen parçaları (Spinner) sürekli döndür
     Composite.allBodies(engine.world).forEach(b => {
       if (b.pieceType === 'spinner') {
         Body.setAngle(b, b.angle + 0.08);
@@ -77,6 +79,8 @@ function setMode(mode) {
 function clearWorld() {
   Composite.clear(engine.world, false);
   marbles = [];
+  leftWall = null;
+  rightWall = null;
 }
 
 function setupEvents() {
@@ -88,10 +92,22 @@ function setupEvents() {
     };
   });
 
-  // EDİTÖR İÇİN SÜRÜKLE - KAYDIR - TIKLA KOY
+  document.getElementById('btn-rotate').onclick = () => {
+    let deg = Math.round(currentAngle * (180 / Math.PI));
+    deg = (deg + 15) > 60 ? -60 : (deg + 15);
+    currentAngle = deg * (Math.PI / 180);
+    document.getElementById('angle-text').innerText = `${deg}°`;
+  };
+
+  document.getElementById('btn-walls').onclick = () => {
+    enableSideWalls = !enableSideWalls;
+    const btn = document.getElementById('btn-walls');
+    btn.innerText = `🧱 Yan Duvarlar: ${enableSideWalls ? 'AÇIK' : 'KAPALI'}`;
+    btn.className = `btn ${enableSideWalls ? 'blue' : 'gray'}`;
+  };
+
   canvas.addEventListener('pointerdown', (e) => {
     if (currentMode !== 'editor') return;
-
     isDraggingCamera = true;
     hasDragged = false;
     startDragY = e.clientY;
@@ -100,10 +116,9 @@ function setupEvents() {
 
   canvas.addEventListener('pointermove', (e) => {
     if (!isDraggingCamera) return;
-
     const deltaY = e.clientY - startDragY;
     if (Math.abs(deltaY) > 5) {
-      hasDragged = true; // Sürükleme yapıldığını işaretle (Tıklama ile karışmasın)
+      hasDragged = true;
       cameraY = initialCameraY - deltaY;
     }
   });
@@ -111,10 +126,19 @@ function setupEvents() {
   canvas.addEventListener('pointerup', (e) => {
     if (currentMode !== 'editor') return;
 
-    // Sürükleme yapılmadıysa, tıklanan yere parça koy
     if (!hasDragged && e.clientY > 80 && e.clientY < window.innerHeight - 80) {
       const x = Math.round(e.clientX / 20) * 20;
       const y = Math.round((e.clientY + cameraY) / 20) * 20;
+
+      if (selectedTileType === 'eraser') {
+        const clickedBody = Matter.Query.point(Composite.allBodies(engine.world), { x, y })[0];
+        if (clickedBody && clickedBody.pieceType) {
+          Composite.remove(engine.world, clickedBody);
+          editorMapPieces = editorMapPieces.filter(p => !(Math.abs(p.x - clickedBody.position.x) < 10 && Math.abs(p.y - clickedBody.position.y) < 10));
+        }
+        isDraggingCamera = false;
+        return;
+      }
 
       if (selectedTileType === 'start') {
         startPoint = { x, y };
@@ -125,8 +149,8 @@ function setupEvents() {
           if (oldFinish) Composite.remove(engine.world, oldFinish);
         }
 
-        editorMapPieces.push({ type: selectedTileType, x, y });
-        createMapBody(selectedTileType, x, y);
+        editorMapPieces.push({ type: selectedTileType, x, y, angle: currentAngle });
+        createMapBody(selectedTileType, x, y, currentAngle);
       }
     }
 
@@ -151,22 +175,17 @@ function setupEvents() {
   };
 }
 
-function createMapBody(type, x, y) {
+function createMapBody(type, x, y, angle = 0) {
   let body;
   if (type === 'flat') {
-    body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, renderColor: '#3498db' });
-  } else if (type === 'ramp-down') {
-    body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, angle: 0.35, renderColor: '#e67e22' });
-  } else if (type === 'ramp-up') {
-    body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, angle: -0.35, renderColor: '#e67e22' });
+    body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, angle, renderColor: '#3498db' });
   } else if (type === 'spinner') {
-    // DÖNEN PARÇA (PERVANE)
     body = Bodies.rectangle(x, y, 180, 18, { isStatic: true, renderColor: '#f1c40f' });
   } else if (type === 'disappear') {
-    body = Bodies.rectangle(x, y, 140, 20, { isStatic: true, renderColor: '#e74c3c' });
+    body = Bodies.rectangle(x, y, 140, 20, { isStatic: true, angle, renderColor: '#e74c3c' });
     body.isDisappearing = false;
   } else if (type === 'finish') {
-    body = Bodies.rectangle(x, y, 120, 15, { isStatic: true, isSensor: true, label: 'finish', renderColor: '#9b59b6' });
+    body = Bodies.rectangle(x, y, 120, 15, { isStatic: true, angle, isSensor: true, label: 'finish', renderColor: '#9b59b6' });
   }
 
   if (body) {
@@ -175,10 +194,18 @@ function createMapBody(type, x, y) {
   }
 }
 
+function setupSideWalls(maxY) {
+  if (!enableSideWalls) return;
+  const wallHeight = maxY + 1000;
+  leftWall = Bodies.rectangle(10, wallHeight / 2, 20, wallHeight, { isStatic: true, renderColor: '#34495e' });
+  rightWall = Bodies.rectangle(canvas.width - 10, wallHeight / 2, 20, wallHeight, { isStatic: true, renderColor: '#34495e' });
+  Composite.add(engine.world, [leftWall, rightWall]);
+}
+
 function saveMap() {
   const name = document.getElementById('map-name').value || "Yeni Harita";
-  savedMaps[name] = { start: startPoint, pieces: editorMapPieces };
-  localStorage.setItem('m_maps_2d_v3', JSON.stringify(savedMaps));
+  savedMaps[name] = { start: startPoint, pieces: editorMapPieces, enableSideWalls };
+  localStorage.setItem('m_maps_2d_v4', JSON.stringify(savedMaps));
   updateMapDropdown();
   alert("Harita Kaydedildi!");
   setMode('menu');
@@ -197,9 +224,17 @@ function updateMapDropdown() {
 function loadSelectedMapToWorld() {
   clearWorld();
   const name = document.getElementById('map-select').value;
-  const mapData = savedMaps[name] || { start: { x: 400, y: 100 }, pieces: [] };
+  const mapData = savedMaps[name] || { start: { x: 400, y: 100 }, pieces: [], enableSideWalls: true };
   startPoint = mapData.start;
-  mapData.pieces.forEach(p => createMapBody(p.type, p.x, p.y));
+  enableSideWalls = mapData.enableSideWalls !== undefined ? mapData.enableSideWalls : true;
+
+  let maxPieceY = 1000;
+  mapData.pieces.forEach(p => {
+    createMapBody(p.type, p.x, p.y, p.angle || 0);
+    if (p.y > maxPieceY) maxPieceY = p.y;
+  });
+
+  setupSideWalls(maxPieceY);
 }
 
 async function startRace() {
@@ -262,7 +297,26 @@ function drawLoop() {
   ctx.save();
   ctx.translate(0, -cameraY);
 
-  // BAŞLANGIÇ NOKTASI (🚀)
+  let lowestY = startPoint.y + 300;
+  Composite.allBodies(engine.world).forEach(b => {
+    if (b.pieceType && b.pieceType !== 'start' && b.position.y > lowestY) {
+      lowestY = b.position.y;
+    }
+  });
+  const deathY = lowestY + 250;
+
+  ctx.fillStyle = 'rgba(255, 76, 76, 0.35)';
+  ctx.fillRect(0, deathY, canvas.width, 400);
+  ctx.strokeStyle = '#ff1744';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(0, deathY);
+  ctx.lineTo(canvas.width, deathY);
+  ctx.stroke();
+  ctx.fillStyle = '#ff1744';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.fillText("🔥 TEHLİKE - DÜŞEN BAŞTAN BAŞLAR 🔥", canvas.width / 2, deathY + 25);
+
   ctx.fillStyle = '#00e676';
   ctx.beginPath();
   ctx.arc(startPoint.x, startPoint.y, 22, 0, Math.PI * 2);
@@ -272,7 +326,6 @@ function drawLoop() {
   ctx.textAlign = 'center';
   ctx.fillText("🚀 BAŞLANGIÇ", startPoint.x, startPoint.y + 4);
 
-  // BLOKLARI ÇİZ
   const bodies = Composite.allBodies(engine.world);
   bodies.forEach(b => {
     if (b.label === 'Circle Body') return;
@@ -294,14 +347,12 @@ function drawLoop() {
     ctx.restore();
   });
 
-  // MİSKETLERİ ÇİZ VE AŞAĞI DÜŞENİ YENİDEN DOĞUR
   let leadingY = 0;
   marbles.forEach((m) => {
     const { x, y } = m.body.position;
 
-    // DÜŞME KONTROLÜ: En alt bloğun veya kameranın çok altına düştüyse baştan başla!
-    if (y > cameraY + canvas.height + 200 || y > 3000) {
-      Body.setPosition(m.body, { x: startPoint.x, y: startPoint.y });
+    if (y >= deathY) {
+      Body.setPosition(m.body, { x: startPoint.x + (Math.random() * 20 - 10), y: startPoint.y });
       Body.setVelocity(m.body, { x: 0, y: 0 });
     }
 
@@ -329,7 +380,6 @@ function drawLoop() {
     ctx.fillText(m.name, x, y - m.radius - 6);
   });
 
-  // Kamera Takibi
   if (currentMode === 'race' && marbles.length > 0) {
     cameraY = leadingY - canvas.height / 2;
   }
