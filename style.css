@@ -81,6 +81,16 @@ body, html {
   background: #1b5e20; 
 }
 
+.p-item.action-btn { 
+  background: #e65100; 
+  border-color: #ff9800; 
+}
+
+.p-item.action-btn.selected { 
+  background: #ff9800; 
+  color: #000; 
+}
+
 .p-item.delete-btn { 
   background: #b71c1c; 
   border-color: #ff5252; 
