@@ -38,7 +38,8 @@ function init() {
   ctx = canvas.getContext('2d');
   
   engine = Engine.create();
-  engine.gravity.y = 1.2;
+  // Yerçekimini ve motor hızını artırdık
+  engine.gravity.y = 1.6;
 
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
@@ -52,7 +53,7 @@ function init() {
 
     Composite.allBodies(engine.world).forEach(b => {
       if (b.pieceType === 'spinner') {
-        Body.setAngle(b, b.angle + 0.08);
+        Body.setAngle(b, b.angle + 0.1);
       }
     });
   }, 1000 / 60);
@@ -128,18 +129,29 @@ function setupEvents() {
     if (currentMode !== 'editor') return;
 
     if (!hasDragged && e.clientY > 80 && e.clientY < window.innerHeight - 80) {
-      const x = Math.round(e.clientX / 20) * 20;
-      const y = Math.round((e.clientY + cameraY) / 20) * 20;
+      const clickX = e.clientX;
+      const clickY = e.clientY + cameraY;
 
+      // 🧹 TEK TEK SİLME SİSTEMİ (DÜZELTİLDİ)
       if (selectedTileType === 'eraser') {
-        const clickedBody = Matter.Query.point(Composite.allBodies(engine.world), { x, y })[0];
-        if (clickedBody && clickedBody.pieceType) {
-          Composite.remove(engine.world, clickedBody);
-          editorMapPieces = editorMapPieces.filter(p => !(Math.abs(p.x - clickedBody.position.x) < 10 && Math.abs(p.y - clickedBody.position.y) < 10));
+        const bodies = Composite.allBodies(engine.world);
+        // Tıklanan noktaya 30px mesafe içerisindeki nesneleri yakala
+        const targetBody = bodies.find(b => {
+          if (!b.pieceType) return false;
+          const dist = Math.hypot(b.position.x - clickX, b.position.y - clickY);
+          return dist < 45;
+        });
+
+        if (targetBody) {
+          Composite.remove(engine.world, targetBody);
+          editorMapPieces = editorMapPieces.filter(p => p !== targetBody.mapDataRef);
         }
         isDraggingCamera = false;
         return;
       }
+
+      const x = Math.round(clickX / 20) * 20;
+      const y = Math.round(clickY / 20) * 20;
 
       if (selectedTileType === 'start') {
         startPoint = { x, y };
@@ -152,8 +164,9 @@ function setupEvents() {
 
         const finalAngle = (selectedTileType === 'ramp-down') ? 0.35 : (selectedTileType === 'ramp-up' ? -0.35 : currentAngle);
 
-        editorMapPieces.push({ type: selectedTileType, x, y, angle: finalAngle });
-        createMapBody(selectedTileType, x, y, finalAngle);
+        const pieceData = { type: selectedTileType, x, y, angle: finalAngle };
+        editorMapPieces.push(pieceData);
+        createMapBody(selectedTileType, x, y, finalAngle, pieceData);
       }
     }
 
@@ -178,20 +191,23 @@ function setupEvents() {
   };
 }
 
-function createMapBody(type, x, y, angle = 0) {
+function createMapBody(type, x, y, angle = 0, refData = null) {
   let body;
+  // Yol sürtünmesini sıfıra yakın yaptık ki kaydırsın
+  const roadOptions = { isStatic: true, angle, friction: 0.001, restitution: 0.6 };
+
   if (type === 'flat') {
-    body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, angle, renderColor: '#3498db' });
+    body = Bodies.rectangle(x, y, 160, 20, { ...roadOptions, renderColor: '#3498db' });
   } else if (type === 'ramp-down') {
-    body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, angle: angle || 0.35, renderColor: '#e67e22' });
+    body = Bodies.rectangle(x, y, 160, 20, { ...roadOptions, angle: angle || 0.35, renderColor: '#e67e22' });
   } else if (type === 'ramp-up') {
-    body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, angle: angle || -0.35, renderColor: '#e67e22' });
+    body = Bodies.rectangle(x, y, 160, 20, { ...roadOptions, angle: angle || -0.35, renderColor: '#e67e22' });
   } else if (type === 'spinner') {
-    body = Bodies.rectangle(x, y, 180, 18, { isStatic: true, renderColor: '#f1c40f' });
+    body = Bodies.rectangle(x, y, 180, 18, { isStatic: true, friction: 0, restitution: 1.2, renderColor: '#f1c40f' });
   } else if (type === 'lava') {
     body = Bodies.rectangle(x, y, 160, 20, { isStatic: true, angle, renderColor: '#d32f2f', label: 'lava' });
   } else if (type === 'disappear') {
-    body = Bodies.rectangle(x, y, 140, 20, { isStatic: true, angle, renderColor: '#e74c3c' });
+    body = Bodies.rectangle(x, y, 140, 20, { ...roadOptions, renderColor: '#e74c3c' });
     body.isDisappearing = false;
   } else if (type === 'finish') {
     body = Bodies.rectangle(x, y, 120, 15, { isStatic: true, angle, isSensor: true, label: 'finish', renderColor: '#9b59b6' });
@@ -199,6 +215,7 @@ function createMapBody(type, x, y, angle = 0) {
 
   if (body) {
     body.pieceType = type;
+    body.mapDataRef = refData;
     Composite.add(engine.world, body);
   }
 }
@@ -206,8 +223,8 @@ function createMapBody(type, x, y, angle = 0) {
 function setupSideWalls(maxY) {
   if (!enableSideWalls) return;
   const wallHeight = maxY + 1000;
-  leftWall = Bodies.rectangle(10, wallHeight / 2, 20, wallHeight, { isStatic: true, renderColor: '#34495e' });
-  rightWall = Bodies.rectangle(canvas.width - 10, wallHeight / 2, 20, wallHeight, { isStatic: true, renderColor: '#34495e' });
+  leftWall = Bodies.rectangle(10, wallHeight / 2, 20, wallHeight, { isStatic: true, friction: 0.001, restitution: 0.8, renderColor: '#34495e' });
+  rightWall = Bodies.rectangle(canvas.width - 10, wallHeight / 2, 20, wallHeight, { isStatic: true, friction: 0.001, restitution: 0.8, renderColor: '#34495e' });
   Composite.add(engine.world, [leftWall, rightWall]);
 }
 
@@ -239,7 +256,7 @@ function loadSelectedMapToWorld() {
 
   let maxPieceY = 1000;
   mapData.pieces.forEach(p => {
-    createMapBody(p.type, p.x, p.y, p.angle || 0);
+    createMapBody(p.type, p.x, p.y, p.angle || 0, p);
     if (p.y > maxPieceY) maxPieceY = p.y;
   });
 
@@ -265,9 +282,12 @@ async function startRace() {
     }
 
     const radius = 16;
+    // ⚡ MİSKET FİZİKLERİ HAFİFLETİLDİ (%50 DAHA HIZLI)
     const body = Bodies.circle(startPoint.x + (i * 30 - 15), startPoint.y, radius, {
-      restitution: 0.7,
-      friction: 0.05
+      restitution: 0.8,    // Zıplama gücü artırıldı
+      friction: 0.005,     // Sürtünme neredeyse yok edildi
+      frictionAir: 0.001,  // Hava direnci düşürüldü
+      density: 0.002       // Kütlesi hafifletildi
     });
 
     Composite.add(engine.world, body);
